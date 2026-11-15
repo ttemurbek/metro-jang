@@ -27,7 +27,7 @@ const Online = {
     this.setupCh(this.pc.createDataChannel('jang', { ordered: true }));
     await this.pc.setLocalDescription(await this.pc.createOffer()); await this.waitIce();
     screen(`<h1>Xona ochildi</h1>
-      <div class="ctl set"><label>1) Bu kodni do'stingizga yuboring:<textarea readonly onclick="this.select()">${this.pack(this.pc.localDescription)}</textarea></label>
+      <div class="ctl set"><label>1) Bu havolani do'stingizga yuboring (ochishi bilan xonaga qo'shiladi):<textarea readonly onclick="this.select()">${location.href.split('#')[0]}#join=${this.pack(this.pc.localDescription)}</textarea></label>
       <label>2) Do'stingiz qaytargan javob kodini shu yerga qo'ying:<textarea id="ansIn"></textarea></label></div>
       <div class="menu"><button class="btn" data-act="onConnect" autofocus>Ulanish</button><button class="btn small" data-act="online" data-back>Orqaga</button></div>`);
   },
@@ -35,14 +35,15 @@ const Online = {
     try { await this.pc.setRemoteDescription(this.unpack(document.getElementById('ansIn').value)); this.status('Ulanmoqda...'); }
     catch (e) { alertBox("Javob kodi noto'g'ri"); }
   },
-  joinScreen() {
+  joinScreen(code) {
     this.host = false;
     screen(`<h1>Xonaga qo'shilish</h1>
-      <div class="ctl set"><label>1) Do'stingiz yuborgan xona kodini qo'ying:<textarea id="offIn"></textarea></label></div>
+      <div class="ctl set"><label>1) Do'stingiz yuborgan xona kodini (yoki havolani) qo'ying:<textarea id="offIn">${code || ''}</textarea></label></div>
       <div class="menu"><button class="btn" data-act="onAccept" autofocus>Javob kodini yaratish</button><button class="btn small" data-act="online" data-back>Orqaga</button></div>`);
   },
   async accept() {
     try {
+      const box = document.getElementById('offIn'); if (box && box.value.includes('#join=')) box.value = box.value.split('#join=')[1];
       this.newPc(); this.pc.ondatachannel = e => this.setupCh(e.channel);
       await this.pc.setRemoteDescription(this.unpack(document.getElementById('offIn').value));
       await this.pc.setLocalDescription(await this.pc.createAnswer()); await this.waitIce();
@@ -115,3 +116,9 @@ const Online = {
   lost() { if (App.mode !== 'online') return; quitFight(); this.close(); screen(`<h1 class="lose">Ulanish uzildi</h1><div class="menu"><button class="btn" data-act="online" autofocus>Qayta ulanish</button><button class="btn small" data-act="menu">Bosh menyu</button></div>`); },
   close() { try { if (this.ch) this.ch.close(); if (this.pc) this.pc.close(); } catch (e) { /* e'tiborsiz */ } this.ch = null; this.pc = null; },
 };
+
+// Havola orqali kelgan taklif: sahifa ochilganda xonaga qo'shilish ekrani
+addEventListener('load', () => setTimeout(() => {
+  const m = /#join=(.+)$/.exec(location.hash);
+  if (m && !App.inFight) { Online.joinScreen(decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname); }
+}, 600));

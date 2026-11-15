@@ -437,6 +437,7 @@ const Game = {
       d.flash = 5; this.shake = 8; Sfx.hit(1.2); this.sparks(d.x - a.face * 10, GROUND - 130, 14, '#d7a6ff'); this.ring(d.x, GROUND - 130, '#d7a6ff', 70);
       if (dealDamage(this, a, d, 4 * a.def.power)) { this.superSeq = null; return; }
     }
+    if (S.t === 50) { this.xray = { t: 50, x: d.x, y: GROUND - 150 * d.def.size, kind: a.def.id.length % 3 }; this.slowmo = 40; Sfx.heavy(); Sfx.say('Suyak sindi!'); }
     if (S.t >= 62) {
       this.superSeq = null; a.set('idle'); a.finPose = null;
       d.set('air'); d.vy = -13; d.vx = a.face * 10; d.y = GROUND - 1; Sfx.heavy(); this.camShake(260, 0.01); this.flash = 5;
@@ -666,7 +667,26 @@ const Game = {
     this.hud();
   },
 
+  // X-ray: Soya zarbasining oxirida suyak yorilishi ko'rinadi
+  drawXray() {
+    const X = this.xray; if (!X) return;
+    if (--X.t <= 0) { this.xray = null; return; }
+    const p = (typeof Arena3D !== 'undefined' && Arena3D.ready && Arena3D.toScreen) ? Arena3D.toScreen(X.x, X.y) : { x: X.x, y: X.y };
+    const a = Math.min(1, X.t / 12), r = 120;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(clamp(p.x, 150, W - 150), clamp(p.y, 150, H - 150));
+    ctx.fillStyle = 'rgba(5,10,25,0.85)'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#7fe3ff'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#e8f6ff'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    if (X.kind === 0) { ctx.beginPath(); ctx.arc(0, -10, 48, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-26, 30); ctx.lineTo(26, 30); ctx.stroke(); ctx.fillStyle = '#e8f6ff'; ctx.beginPath(); ctx.arc(-18, -14, 9, 0, Math.PI * 2); ctx.arc(18, -14, 9, 0, Math.PI * 2); ctx.fill(); }
+    else if (X.kind === 1) { for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(-60, i * 22); ctx.quadraticCurveTo(0, i * 22 - 18, 60, i * 22); ctx.stroke(); } ctx.beginPath(); ctx.moveTo(0, -60); ctx.lineTo(0, 60); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.moveTo(-70, 0); ctx.lineTo(70, 0); ctx.stroke(); ctx.beginPath(); ctx.arc(-70, 0, 12, 0, Math.PI * 2); ctx.arc(70, 0, 12, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-10, -55); ctx.lineTo(8, -20); ctx.lineTo(-6, 5); ctx.lineTo(14, 40); ctx.stroke();
+    ctx.fillStyle = '#ff3b3b'; ctx.font = 'bold italic 34px Impact, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('SUYAK SINDI!', 0, r + 38);
+    ctx.restore();
+  },
+
   hud() {
+    this.drawXray();
     const f1 = this.f1, f2 = this.f2;
     bar(40, f1, false); bar(W - 40, f2, true);
     if (this.opts.tag && this.bench) Modes.tagHud(this);
@@ -1061,6 +1081,7 @@ function controlsMenu(back) {
         <p><b>Egilib kuchli zarba</b> — raqibni havoga otadi. <b>Oxirgi bekat:</b> "TUGAT UNI!" chiqqanda yaqinlashib Maxsus tugma.</p>
         <h3>Maxsus usullar va Soya kuchi</h3>
         <p><b>Maxsus</b> — 1-usul, <b>Pastga + Maxsus</b> — 2-usul. Zarba tekkanda Maxsus bilan bekor qilish mumkin.</p>
+        <p><b>Kuchaytirilgan maxsus usul:</b> Blok + Maxsus (Soya kuchining uchdan biri) — 1.5 barobar kuchli.</p>
         <p><b>Soya kuchi</b> (binafsha shkala) zarba berib/olib to'ladi. To'la bo'lsa: <b>Kuchli + Maxsus</b> — Soya zarbasi. Yarmi bilan: urilib turganda <b>Blok</b> — zanjirni uzish.</p>
         <p><b>Geympad:</b> X — yengil, Y — kuchli, A — tepish, B — ushlash, RB/RT — blok, LB/LT — maxsus, Start — pauza.</p>
       </div>

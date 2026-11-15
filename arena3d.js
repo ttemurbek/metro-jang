@@ -11,11 +11,12 @@ const Arena3D = (() => {
   let portraitRenderer, portraitScene, portraitCamera;
   const portraitModels = new Map();
   const realTemplates = Object.create(null);
-  const modelKind = def => def.top ? 'suited' : 'man';
+  const modelKind = def => def.female && realTemplates.female ? 'female' : def.top ? 'suited' : 'man';
+  let animSrc = null; // CC0 jang animatsiyalari manbasi (faqat skelet)
   function loadRealModels() {
     if (!window.MetroGLTF || !window.MetroModelData) return;
     const loader = new MetroGLTF.GLTFLoader();
-    for (const kind of ['man', 'suited']) {
+    for (const kind of ['man', 'suited', 'female']) {
       const raw = MetroModelData[kind];
       if (!raw) continue;
       try {
@@ -27,6 +28,10 @@ const Arena3D = (() => {
         }, () => {});
       } catch (e) { /* Procedural fighter remains available. */ }
     }
+    if (window.MetroAnimData) try {
+      const bytes = Uint8Array.from(atob(window.MetroAnimData), ch => ch.charCodeAt(0));
+      loader.parse(bytes.buffer, '', gltf => { animSrc = gltf; }, () => {});
+    } catch (e) { /* animatsiyasiz ham ishlaydi */ }
   }
   // Har jangchining kiyimi: suyaklarga biriktirilgan shim, ko'ylak/kurtka, kamar, qo'lqop, soch, poyabzal
   function dress(rig, nodeOf, def) {
@@ -85,7 +90,7 @@ const Arena3D = (() => {
     });
     // Suyaklarni o'yin skeletiga yo'nalish bo'yicha moslash uchun tinch holat ma'lumotlari
     root.scale.setScalar(1); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
-    const nodeOf = n => bones[n] && bones[n].node, wp = n => nodeOf(n).getWorldPosition(new T.Vector3());
+    const nodeOf = n => { const b = bones[n] || bones[n[0].toUpperCase() + n.slice(1)]; return b && b.node; }, wp = n => nodeOf(n).getWorldPosition(new T.Vector3());
     const rig = Object.create(null);
     for (const [b, c] of [['spine_01', 'spine_02'], ['spine_02', 'spine_03'], ['spine_03', 'neck_01'], ['neck_01', 'head'],
       ['upperarm_l', 'lowerarm_l'], ['lowerarm_l', 'hand_l'], ['upperarm_r', 'lowerarm_r'], ['lowerarm_r', 'hand_r'],
@@ -96,8 +101,9 @@ const Arena3D = (() => {
     }
     const legLen = nodeOf('thigh_l') && nodeOf('foot_l') ? wp('thigh_l').distanceTo(wp('calf_l')) + wp('calf_l').distanceTo(wp('foot_l')) : 0.9;
     const pelvis = nodeOf('pelvis') || (nodeOf('spine_01') && nodeOf('spine_01').parent);
+    const fwd = nodeOf('foot_l') && nodeOf('ball_l') ? Math.sign(wp('ball_l').z - wp('foot_l').z) || 1 : 1;
     dress(rig, nodeOf, def);
-    return { root, body, bones, rig, legLen, pelvis, real: Object.keys(rig).length >= 10,
+    return { root, body, bones, rig, legLen, pelvis, fwd, real: Object.keys(rig).length >= 10,
       def, lastHp: 100 * (def.hpMul || 1), pose: {}, motion: 0 };
   }
   const mat = (color, extra = {}) => new T.MeshStandardMaterial({ color, roughness: 0.67, metalness: 0.08, ...extra });
@@ -341,10 +347,59 @@ const Arena3D = (() => {
       _q2.setFromUnitVectors(restDir, want); R.node.quaternion.copy(_q2.multiply(R.restQ));
       R.node.updateMatrixWorld(true);
     }
+    applyClip(model, f, face);
+    const hr = Math.max(0, f.hp / (f.maxHp || 100));
+    if (model.hurtLevel === undefined || Math.abs(model.hurtLevel - hr) > 0.04) {
+      model.hurtLevel = hr;
+      model.body.traverse(n => { if (n.isMesh && n.material && n.material.emissive && !f.def.shadow) { n.material.emissive.setRGB((1 - hr) * 0.22, 0, 0); n.material.emissiveIntensity = 1; } });
+    }
     model.body.visible = f.state !== 'gone' && !f.hidden;
     if (f.hp < model.lastHp - 0.1 && g.phase !== 'intro') blood(f.x, f.y, Math.min(12, Math.ceil((model.lastHp - f.hp) * 0.8)));
     model.lastHp = f.hp;
     return model;
+  }
+
+  // Haqiqiy (mocap) animatsiya: o'yin holatiga mos klipni tanlab, uning suyak yo'nalishlarini modelga ko'chiradi
+  const SRC = { spine_01: ['DEF-spine.001', 'DEF-spine.002'], spine_02: ['DEF-spine.002', 'DEF-spine.003'], spine_03: ['DEF-spine.003', 'DEF-neck'], neck_01: ['DEF-neck', 'DEF-head'],
+    upperarm_l: ['DEF-upper_arm.L', 'DEF-forearm.L'], lowerarm_l: ['DEF-forearm.L', 'DEF-hand.L'], upperarm_r: ['DEF-upper_arm.R', 'DEF-forearm.R'], lowerarm_r: ['DEF-forearm.R', 'DEF-hand.R'],
+    thigh_l: ['DEF-thigh.L', 'DEF-shin.L'], calf_l: ['DEF-shin.L', 'DEF-foot.L'], thigh_r: ['DEF-thigh.R', 'DEF-shin.R'], calf_r: ['DEF-shin.R', 'DEF-foot.R'] };
+  const UPPER = ['spine_01', 'spine_02', 'spine_03', 'neck_01', 'upperarm_l', 'lowerarm_l', 'upperarm_r', 'lowerarm_r'];
+  function clipFor(f) {
+    if (f.state === 'attack' && f.atk) {
+      const p = Math.min(1, f.af / (f.atk.start + f.atk.act + f.atk.rec));
+      if (f.atkName === 'jab' || f.atkName === 'cjab') return ['Punch_Jab', p, UPPER];
+      if (f.atkName === 'cross' || f.atkName === 'body') return ['Punch_Cross', p, UPPER];
+    }
+    if (f.state === 'hit') return [f.atkId % 2 ? 'Hit_Head' : 'Hit_Chest', Math.min(1, f.t / Math.max(8, f.stun || 15)), UPPER];
+    if (f.state === 'idle') return ['Punch_Enter', 1, UPPER];
+    if (f.state === 'jump') return ['Jump_Loop', (f.t % 40) / 40, null];
+    return null;
+  }
+  function applyClip(model, f, face) {
+    if (!animSrc) return;
+    const c = clipFor(f); if (!c) return;
+    if (!model.src) {
+      const root = animSrc.scene.clone(true), mixer = new T.AnimationMixer(root), actions = {}, nodes = {};
+      for (const clip of animSrc.animations) actions[clip.name] = mixer.clipAction(clip);
+      root.traverse(n => { nodes[n.name] = n; });
+      root.updateMatrixWorld(true);
+      const ft = nodes['DEF-foot.L'], toe = nodes['DEF-toe.L'];
+      const fwd = ft && toe ? Math.sign(toe.getWorldPosition(new T.Vector3()).z - ft.getWorldPosition(new T.Vector3()).z) || 1 : 1;
+      model.src = { root, mixer, actions, nodes, fwd, cur: null };
+    }
+    const S = model.src, [name, p, bonesList] = c, act = S.actions[name]; if (!act) return;
+    if (S.cur !== name) { S.mixer.stopAllAction(); act.reset(); act.play(); act.setEffectiveWeight(1); S.cur = name; }
+    act.paused = true; act.time = Math.min(0.999, p) * act.getClip().duration; S.mixer.update(0);
+    S.root.rotation.set(0, (face > 0 ? Math.PI / 2 : -Math.PI / 2) + (S.fwd !== model.fwd ? Math.PI : 0), 0);
+    S.root.updateMatrixWorld(true);
+    for (const tb of bonesList || Object.keys(SRC)) {
+      const R = model.rig[tb], pair = SRC[tb]; if (!R || !pair) continue;
+      const a = S.nodes[pair[0]], b = S.nodes[pair[1]]; if (!a || !b) continue;
+      const want = b.getWorldPosition(_v).sub(a.getWorldPosition(_v2)); if (want.lengthSq() < 1e-10) continue; want.normalize();
+      R.node.parent.getWorldQuaternion(_q).invert(); want.applyQuaternion(_q);
+      const restDir = _v2.copy(R.childDir).applyQuaternion(R.restQ);
+      _q2.setFromUnitVectors(restDir, want); R.node.quaternion.copy(_q2.multiply(R.restQ)); R.node.updateMatrixWorld(true);
+    }
   }
 
   function blood(x, y, count = 8) {
@@ -486,8 +541,9 @@ const Arena3D = (() => {
       // kamera jangchilarga ergashadi va masofaga qarab yaqinlashadi
       const mx = ((g.f1.x + g.f2.x) / 2) / 80 - 8, dist = Math.abs(g.f1.x - g.f2.x) / 80;
       const fin = g.phase === 'finisher' && g.phaseT > 25 && g.phaseT < 140;
-      const tz = fin ? 6.2 : Math.max(7.4, Math.min(11.5, 5.6 + dist * 0.9)), tx = Math.max(-4.2, Math.min(4.2, fin && g.finLoser ? g.finLoser.x / 80 - 8 : mx));
-      camX += (tx - camX) * 0.08; camZ += (tz - camZ) * 0.06;
+      if (g.punchIn > 0) g.punchIn--;
+      const tz = (fin ? 6.2 : Math.max(7.4, Math.min(11.5, 5.6 + dist * 0.9))) - (g.punchIn > 0 ? 1.4 : 0) - (g.xray ? 2.5 : 0), tx = Math.max(-4.2, Math.min(4.2, fin && g.finLoser ? g.finLoser.x / 80 - 8 : mx));
+      camX += (tx - camX) * 0.08; camZ += (tz - camZ) * (g.punchIn > 0 || g.xray ? 0.25 : 0.06);
       camera.position.set(camX + (Math.random() - 0.5) * shake + (fin ? Math.sin(g.phaseT * 0.02) * 1.5 : 0), 2.3 + camZ * 0.08, camZ);
       camera.lookAt(camX, 1.35, 0);
       renderer.render(scene, camera);

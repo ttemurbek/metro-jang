@@ -2,3 +2,8 @@ Rigged MakeHuman models (man.glb, suited.glb), embedded as base64 in models.js
 Source: https://github.com/kunalkushwaha/vsim/tree/main/packages/assets/library
 Credit and license: https://github.com/kunalkushwaha/vsim/blob/main/packages/assets/library/CREDITS.md
 MakeHuman/MPFB 2 generated bodies, skin and clothing: CC0 1.0. The bundled walk clip originates from CMU Graphics Lab Motion Capture Database subject 07 trial 01 and is free for all uses per the source credits. The source credits identify idle, run and wave as hand-keyed by vsim. These models are redistributed unmodified, with credits retained here.
+
+Fighting animations (assets/anims.js: Punch_Jab, Punch_Cross, Punch_Enter, Hit_Chest, Hit_Head, Death01, Jump_*, Roll)
+and the female body (assets/female.js: Mannequin_F) come from Quaternius "Universal Animation Library" and
+"Universal Animation Library 2" (Standard), CC0 1.0 (public domain). Source: https://quaternius.com and
+https://opengameart.org/content/universal-animation-library. Only the listed clips/meshes were kept.

@@ -10,7 +10,7 @@ const FIGHTERS = [
     chains: { heavy: { heavy: 'hammer' } }, sig: "Polvon bolg'asi: Kuchli → Kuchli",
     skin: '#b97d55', hair: '#151515', hairStyle: 'bald', beard: true, top: null, shorts: '#8b1e1e', gloves: '#1d1d1d', trim: '#f0c040',
     alt: { shorts: '#2d5a27', gloves: '#5a3b12', trim: '#ffffff' } },
-  { id: 'chaqmoq', name: 'Chaqmoq', title: 'Tezkor tepkichi', size: 0.95, speed: 4.6, power: 0.9, pref: 125, stats: [3, 5, 3],
+  { id: 'chaqmoq', female: true, name: 'Chaqmoq', title: 'Tezkor tepkichi', size: 0.95, speed: 4.6, power: 0.9, pref: 125, stats: [3, 5, 3],
     specials: [{ name: 'Chaqmoq tepki', kind: 'dash', desc: 'Chaqmoqdek otilib tepadi' },
                { name: 'Qaychi tepki', kind: 'scissor', desc: 'Sakrab, yuqoridan tepadi — faqat tik blok' },
                { name: 'Qanotli tepki', kind: 'flip', desc: 'Salto tepki — havodagini uradi' }], ai: { aggr: .15, block: -.1 },
@@ -46,7 +46,7 @@ const FIGHTERS = [
     chains: { heavy: { kick: 'chainsweep' } }, sig: 'Temir halqa: Kuchli → Tepish',
     skin: '#c08a60', hair: '#2b2b2b', hairStyle: 'short', top: '#3a3a3a', hoodie: true, shorts: '#4a4a52', gloves: '#2a2a2a', trim: '#b0b0b0',
     alt: { top: '#6b2d2d', shorts: '#2d3d4a', trim: '#f2c200' } },
-  { id: 'nur', name: 'Nur', title: "Yorug'lik sehrgari", size: 0.96, speed: 4.2, power: 0.92, pref: 200, stats: [3, 4, 3],
+  { id: 'nur', female: true, name: 'Nur', title: "Yorug'lik sehrgari", size: 0.96, speed: 4.2, power: 0.92, pref: 200, stats: [3, 4, 3],
     specials: [{ name: "Nur o'qi", kind: 'proj', desc: "Yorug'lik o'qi — sakrab qochish mumkin", color: '#7ff0ff' },
                { name: 'Chaqnash', kind: 'teleport', desc: "Yo'qolib, raqib orqasida paydo bo'ladi" },
                { name: "Nur to'lqini", kind: 'gust', desc: "Yorug'lik to'lqini raqibni itaradi" }], ai: { keep: 60, special: .08 },
@@ -73,7 +73,7 @@ const FIGHTERS = [
     chains: { cjab: { kick: 'kick2' }, kick2: { heavy: 'shadowkick' } }, sig: 'Tuman izi: Egilib yengil → Tepish → Kuchli',
     skin: '#b79581', hair: '#161622', hairStyle: 'long', bandana: '#9f80d8', top: '#312c49', hoodie: true, shorts: '#1d1b2c', gloves: '#7d65ad', trim: '#9f80d8', glow: '#aa92ec',
     alt: { top: '#223d43', shorts: '#182b31', gloves: '#55bfc3', bandana: '#55bfc3', glow: '#80d6d9' } },
-  { id: 'navbatchi', name: 'Navbatchi', title: 'Bekat navbatchisi', size: 0.97, speed: 4.1, power: 0.95, pref: 150, stats: [3, 4, 4],
+  { id: 'navbatchi', female: true, name: 'Navbatchi', title: 'Bekat navbatchisi', size: 0.97, speed: 4.1, power: 0.95, pref: 150, stats: [3, 4, 4],
     reach: 1.25, weapon: 'flag', ai: { keep: 30, block: .1 },
     specials: [{ name: 'Bayroq qamchi', kind: 'lash', desc: 'Signal bayrog\'i bilan uzoqdan uradi va tortadi' },
                { name: 'Signal', kind: 'whistle', desc: 'Keskin hushtak — raqib gangib qoladi' },
@@ -235,7 +235,7 @@ class Fighter {
   }
 
   get airborne() { return this.y < GROUND - 0.5; }
-  set(s) { if (this.state !== s) { this.state = s; this.t = 0; this.bounced = false; } }
+  set(s) { if (this.state !== s) { if (this.state === 'special') this.enh = false; this.state = s; this.t = 0; this.bounced = false; } }
   use(k) { this.usage[k]++; }
   gainMeter(v) { this.meter = Math.min(100, this.meter + v); }
 
@@ -350,6 +350,11 @@ class Fighter {
     if (inp.press.block && f.parryCd <= 0) { f.parryT = 7; f.parryCd = 28; }
     // Soya zarbasi: Kuchli tugmani bosib turib Maxsus (shkala to'la bo'lsa)
     if (inp.press.special && (inp.held.heavy || inp.press.heavy) && f.meter >= 100) return f.startSuper(g);
+    // Kuchaytirilgan maxsus usul: Blok + Maxsus, Soya kuchining uchdan biri evaziga (zarar 1.5x, boshida daxlsizlik)
+    if (inp.press.special && inp.held.block && f.meter >= 34 && f.specialCd <= 0 && f.st >= 15) {
+      f.meter -= 34; f.st += 15; f.startSpecial(g, inp.held.down ? 1 : inp.held[f.face > 0 ? 'left' : 'right'] ? 2 : 0);
+      f.enh = true; f.invuln = 10; g.ring(f.x, GROUND - 120, '#d7a6ff', 110); g.say('KUCHAYTIRILGAN!', f.x, GROUND - 280, '#d7a6ff', 24); return;
+    }
     if (inp.press.special) {
       if (f.st >= 30 && f.specialCd <= 0) return f.startSpecial(g, f.spIdx(inp));
       return f.tired(g);
@@ -889,7 +894,7 @@ function applyHit(f, o, A, g) {
     if (o.st <= 0) { o.set('hit'); o.stun = 40; g.say('Himoya buzildi!', o.x, GROUND - 230, '#f96'); }
     return 'block';
   }
-  let dmg = A.dmg * f.def.power * (A.arm && f.item ? ITEMS[f.item.kind].dmg : 1);
+  let dmg = A.dmg * f.def.power * (A.arm && f.item ? ITEMS[f.item.kind].dmg : 1) * (f.enh ? 1.5 : 1);
   if (f.rep.n > 0 && f.atk === A) dmg *= Math.max(0.35, 1 - f.rep.n * 0.18);
   const counter = (o.state === 'attack' && o.af < o.atk.start) || (o.state === 'attack' && o.af >= o.atk.start + o.atk.act && o.atk.heavy);
   if (counter) { dmg *= 1.3; g.say('Qarshi zarba!', o.x, GROUND - 250, '#ffb347', 22); }
@@ -901,6 +906,8 @@ function applyHit(f, o, A, g) {
   else if (f.combo >= 3) g.say(f.combo + ' ZARBA KOMBO!', f.side === 0 ? 240 : W - 240, 200, '#ffde59', 30);
   o.flash = 5;
   g.hitstop = A.heavy ? 8 : 4;
+  if (A.heavy) { g.punchIn = 14; if (counter || A.combo) g.slowmo = Math.max(g.slowmo || 0, 18); }
+  if (typeof navigator !== 'undefined' && navigator.vibrate && typeof Touch !== 'undefined' && Touch.isTouch) try { navigator.vibrate(A.heavy ? 45 : 18); } catch (e) { /* ixtiyoriy */ }
   g.shake = Math.max(g.shake, A.heavy ? 10 : 4);
   if (A.heavy) { g.camShake(120, 0.006); g.flash = 3; }
   if (A.heavy) Sfx.heavy(); else Sfx.hit(Math.min(1.3, A.dmg / 8));
