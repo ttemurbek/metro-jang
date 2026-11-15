@@ -341,8 +341,21 @@ const Game = {
     if (!(w.ctrl instanceof Bot)) { Store.d.stats.finishers++; }
   },
 
+  // "Do'stlik choyi" — zo'ravonliksiz, kulgili yakun: g'olib raqibiga choy uzatadi
+  teaStep() {
+    const w = this.finWinner, l = this.finLoser, t = this.phaseT;
+    if (t === 1) { this.banner = { text: "DO'STLIK CHOYI", sub: w.def.name + ' raqibiga choy uzatdi', color: '#6dff8a', t: 0 }; Sfx.chime(); }
+    if (t < 30) { const tx = l.x - this.fin.dir * 95; w.x += (tx - w.x) * 0.15; w.set('idle'); }
+    if (t === 30) { w.set('finA'); w.finPose = POSES.cast; this.say('Marhamat, choy iching!', w.x, GROUND - 260, '#ffe9a6', 24); }
+    if (t === 70) { l.set('idle'); l.finPose = null; this.say('Rahmat, aka... yutqazdim.', l.x, GROUND - 260, '#ffffff', 22); }
+    if (t > 70 && t % 6 === 0) this.sparks(w.x + this.fin.dir * 40, GROUND - 200, 6, ['#ffde59', '#6dff8a', '#7fc4ff', '#ff8cc6'][t % 4]);
+    if (t === 120) { w.set('win'); Sfx.win(); }
+    if (t >= 190) { w.wins++; this.roundWinner = w; this.matchOver(); }
+  },
+
   // "Oxirgi bekat" — yakunlovchi zarba sahnasi
   finisherStep() {
+    if (this.fin && this.fin.kind === 'tea') return this.teaStep();
     const F = this.fin, w = this.finWinner, l = this.finLoser, t = this.phaseT, dir = F.dir;
     if (Arena3D.ready && F.meta) {
       if (t < 25) { w.x += (l.x - dir * 95 - w.x) * 0.18; w.set('idle'); }
@@ -480,6 +493,11 @@ const Game = {
     this.phaseT++;
 
     if (this.phase === 'intro') {
+      // raund oldidan qahramonlar bir-biriga gap otadi
+      if (this.round === 1 && (this.phaseT === 8 || this.phaseT === 58)) {
+        const f = this.phaseT === 8 ? f1 : f2, o = f === f1 ? f2 : f1, L = INTRO_LINES[f.def.id] || INTRO_LINES._;
+        this.say(L[(o.def.id.length + f.side) % L.length].replace('{o}', o.def.name), f.x, GROUND - 270, f.side ? '#ffb3b3' : '#b3dcff', 20);
+      }
       if (this.phaseT === 2) Sfx.say(this.round > 3 ? "Qo'shimcha raund" : this.round === 3 && f1.wins === 1 && f2.wins === 1 ? 'Hal qiluvchi raund' : this.round + '-raund');
       if (this.phaseT === 110) { Sfx.gong(); Sfx.say('Jang!'); }
       if (this.phaseT >= 160) this.phase = 'fight';
@@ -494,7 +512,7 @@ const Game = {
     } else if (this.phase === 'tugat') {
       const w = this.finWinner, l = this.finLoser;
       const wi = w === f1 ? i1 : i2;
-      if (wi.press.special && Math.abs(w.x - l.x) < 260 && !w.airborne && w.state !== 'attack') { this.startFinisher(wi.held.down ? 'rail' : 'train'); return; }
+      if (wi.press.special && Math.abs(w.x - l.x) < 260 && !w.airborne && w.state !== 'attack') { this.startFinisher(wi.held.up ? 'tea' : wi.held.down ? 'rail' : 'train'); return; }
       if (this.phaseT >= 260) this.endRound(w, l, 'nokaut');
     } else if (this.phase === 'finisher') {
       this.finisherStep(); return;
@@ -1081,6 +1099,7 @@ function controlsMenu(back) {
         <p><b>Egilib kuchli zarba</b> — raqibni havoga otadi. <b>Oxirgi bekat:</b> "TUGAT UNI!" chiqqanda yaqinlashib Maxsus tugma.</p>
         <h3>Maxsus usullar va Soya kuchi</h3>
         <p><b>Maxsus</b> — 1-usul, <b>Pastga + Maxsus</b> — 2-usul. Zarba tekkanda Maxsus bilan bekor qilish mumkin.</p>
+        <p><b>Yakunlar:</b> "TUGAT UNI!" paytida Maxsus — qahramonning o'z yakuni, Pastga+Maxsus — "Uchinchi rels", Yuqoriga+Maxsus — "Do'stlik choyi".</p>
         <p><b>Kuchaytirilgan maxsus usul:</b> Blok + Maxsus (Soya kuchining uchdan biri) — 1.5 barobar kuchli.</p>
         <p><b>Soya kuchi</b> (binafsha shkala) zarba berib/olib to'ladi. To'la bo'lsa: <b>Kuchli + Maxsus</b> — Soya zarbasi. Yarmi bilan: urilib turganda <b>Blok</b> — zanjirni uzish.</p>
         <p><b>Geympad:</b> X — yengil, Y — kuchli, A — tepish, B — ushlash, RB/RT — blok, LB/LT — maxsus, Start — pauza.</p>
@@ -1347,3 +1366,23 @@ new Phaser.Game({
     },
   },
 });
+
+// Raund oldidan gap otishlar (original iboralar)
+const INTRO_LINES = {
+  _: ['{o}, bugun bekatdan yayov ketasan!', 'Oxirgi poyezdga ulgurmaysan, {o}.'],
+  boron: ['{o}, polvon bilan kurashga keldingmi?', 'Gilam ham, pol ham bir xil — yiqilasan!'],
+  chaqmoq: ['Ko\'z ochib-yumguncha tugataman, {o}.', 'Meni ushlay olsang — sovg\'a beraman!'],
+  temir: ['Qo\'lqoplarim tayyor, {o}.', 'Bir raund — bitta saboq.'],
+  shamol: ['Kurash qoidasi: halol, lekin qattiq!', '{o}, belbog\'ingni mahkam bog\'la.'],
+  lochin: ['Yuqoriga qara, {o} — men o\'sha yerdaman.', 'Lochin ovini qo\'ldan boy bermaydi.'],
+  zanjir: ['Ko\'chada qoidalar yo\'q, {o}.', 'Zanjir uzilmaydi — sen uzilasan.'],
+  nur: ['Yorug\'lik har doim yo\'l topadi.', '{o}, ko\'zingni qamashtiraman.'],
+  qorovul: ['Fuqaro {o}, chiptangizni ko\'rsating!', 'Bekat yopiq. Sen uchun — abadiy.'],
+  sher: ['Masofa, nafas, sabr — men uchtasini bilaman.', '{o}, parterda ko\'rishamiz.'],
+  tuman: ['Meni ko\'rmaysan, {o}. Faqat sezasan.', 'Tuman tarqalganda sen yotgan bo\'lasan.'],
+  navbatchi: ['Navbatim tugamaguncha hech kim o\'tmaydi!', 'Qizil signal, {o}. To\'xta!'],
+  kalit: ['Sen ham ta\'mirga muhtojsan, {o}.', 'Gayka bo\'shabdi — tortib qo\'yaman.'],
+  tulpor: ['Tulporni hech kim quvib yetmagan!', '{o}, chang-to\'zonimda qolasan.'],
+  uchqun: ['Kickflip yoki kick-out — tanla, {o}!', 'Doskam tayyor, sen-chi?'],
+  soya: ['Sening soyang allaqachon meniki, {o}.', 'Qorong\'ilikka xush kelibsan.'],
+};

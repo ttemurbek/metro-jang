@@ -191,6 +191,34 @@ const Arena3D = (() => {
     for (const map of [projectiles, pickups, ringFx]) { for (const m of map.values()) scene.remove(m); map.clear(); }
     stage = new T.Group(); scene.add(stage);
   }
+  // 3D bekat: ustunlar, qandillar (haqiqiy yorug'lik bilan), platforma chiziqlari, yaltiroq pol
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const q = c.getContext('2d');
+    const gr = q.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,240,210,0.5)'); gr.addColorStop(1, 'rgba(255,240,210,0)');
+    q.fillStyle = gr; q.fillRect(0, 0, 64, 64); return new T.CanvasTexture(c); })();
+  function build3dStation(st) {
+    const X = px => px / 80 - 8;
+    const colM = mat(st.col ? st.col[0] : '#d8d0c0', { roughness: 0.22, metalness: 0.18 }), capM = mat(st.accent || '#c79a2c', { roughness: 0.35, metalness: 0.4 });
+    for (const px of [110, 350, 930, 1170]) for (const z of [-1.9]) {
+      const c = new T.Mesh(new T.CylinderGeometry(0.3, 0.34, 6.2, 24), colM); c.position.set(X(px), 3.1, z); c.castShadow = true; c.receiveShadow = true; stage.add(c);
+      stage.add(box(0.95, 0.28, 0.95, capM, X(px), 6.1, z)); stage.add(box(0.9, 0.24, 0.9, capM, X(px), 0.12, z));
+    }
+    const lampM = new T.MeshStandardMaterial({ color: st.lamp || '#fff2c4', emissive: st.lamp || '#fff2c4', emissiveIntensity: 2.2 });
+    for (const px of [250, 640, 1030]) {
+      const gx = X(px), grp = new T.Group(); grp.position.set(gx, 4.9, -0.6);
+      for (let i = 0; i < 8; i++) { const b = new T.Mesh(new T.SphereGeometry(0.09, 10, 8), lampM); b.position.set(Math.cos(i * 0.785) * 0.42, Math.sin(i * 1.7) * 0.06, Math.sin(i * 0.785) * 0.42); grp.add(b); }
+      const ring = new T.Mesh(new T.TorusGeometry(0.42, 0.025, 6, 28), capM); ring.rotation.x = Math.PI / 2; grp.add(ring);
+      const rod = new T.Mesh(new T.CylinderGeometry(0.015, 0.015, 1.6, 6), mat('#444')); rod.position.y = 0.8; grp.add(rod);
+      const glow = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color: st.lamp || '#fff2c4', blending: T.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85 }));
+      glow.scale.set(2.6, 2.6, 1); grp.add(glow);
+      const pl = new T.PointLight(st.lamp || '#fff2c4', 9 * (1 - (st.dim || 0)), 9, 1.6); pl.position.y = -0.3; grp.add(pl);
+      stage.add(grp);
+    }
+    // platforma chetidagi sariq ogohlantirish chizig'i (orqa tomonda) va yaltiroq pol plitalari
+    stage.add(box(17, 0.04, 0.22, mat('#d8b400', { roughness: 0.4 }), 0, 0.02, -2.75));
+    const tileM = mat(st.floor ? st.floor[1] : '#333', { roughness: 0.12, metalness: 0.35, transparent: true, opacity: 0.35 });
+    for (let x = -8; x <= 8; x += 1.6) stage.add(box(0.02, 0.005, 6, tileM, x, 0.01, 0));
+  }
+
   function buildStage(g) {
     clearStage();
     const train = g.train, st = g.station || {}, accent = train ? '#48b5d7' : st.accent || '#a8cfff';
@@ -198,7 +226,7 @@ const Arena3D = (() => {
     backdropTexture = null;
     if (!train && st.id) {
       const c = document.createElement('canvas'); c.width = 1280; c.height = 720;
-      drawStation(c.getContext('2d'), st, 0, null);
+      drawStation(c.getContext('2d'), st, 0, null, true);
       backdropTexture = new T.CanvasTexture(c); backdropTexture.colorSpace = T.SRGBColorSpace;
     }
     scene.background = train ? new T.Color('#17232e') : backdropTexture || new T.Color(st.wall ? st.wall[1] : '#182137');
@@ -238,6 +266,7 @@ const Arena3D = (() => {
       board.position.set(0, 3.8, -2.88); stage.add(board);
       for (const z of [-4.1, -4.7]) stage.add(box(17, 0.08, 0.1, mat('#a8aeb2', { metalness: 0.78 }), 0, -0.12, z));
     }
+    if (!train && st.id) build3dStation(st);
     light.color.set(accent);
     stageKey = train ? 'train' : st.id || 'metro';
   }
@@ -354,9 +383,21 @@ const Arena3D = (() => {
       model.body.traverse(n => { if (n.isMesh && n.material && n.material.emissive && !f.def.shadow) { n.material.emissive.setRGB((1 - hr) * 0.22, 0, 0); n.material.emissiveIntensity = 1; } });
     }
     model.body.visible = f.state !== 'gone' && !f.hidden;
-    if (f.hp < model.lastHp - 0.1 && g.phase !== 'intro') blood(f.x, f.y, Math.min(12, Math.ceil((model.lastHp - f.hp) * 0.8)));
+    if (f.hp < model.lastHp - 0.1 && g.phase !== 'intro') { blood(f.x, f.y, Math.min(12, Math.ceil((model.lastHp - f.hp) * 0.8))); if (model.lastHp - f.hp >= 3) woundMark(model); }
+    if (f.hp >= (f.maxHp || 100) - 0.01 && model.wounds && model.wounds.length) { for (const w of model.wounds) w.parent && w.parent.remove(w); model.wounds = []; }
     model.lastHp = f.hp;
     return model;
+  }
+  const woundM = new T.MeshStandardMaterial({ color: '#7a0010', roughness: 0.25, metalness: 0.1 });
+  function woundMark(model) {
+    if (!model.rig || (Store.d.settings && Store.d.settings.blood === false)) return;
+    model.wounds = model.wounds || []; if (model.wounds.length >= 16) return;
+    const names = ['neck_01', 'spine_03', 'spine_02', 'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r'], R = model.rig[names[Math.random() * names.length | 0]];
+    if (!R) return;
+    const m = new T.Mesh(sphere, woundM), r = (0.035 + Math.random() * 0.03) * R.k;
+    m.scale.set(r, r * 0.5, r);
+    m.position.copy(R.childDir).multiplyScalar(R.len * Math.random()).add(new T.Vector3((Math.random() - .5), 0, (Math.random() - .5)).multiplyScalar(0.12 * R.k));
+    R.node.add(m); model.wounds.push(m);
   }
 
   // Haqiqiy (mocap) animatsiya: o'yin holatiga mos klipni tanlab, uning suyak yo'nalishlarini modelga ko'chiradi
@@ -407,7 +448,7 @@ const Arena3D = (() => {
     const px = (x / 1280 - 0.5) * W3, py = 2.0 + Math.max(0, (650 - y) / 93);
     for (let i = 0; i < count; i++) {
       const mesh = new T.Mesh(dropGeo, bloodMat);
-      mesh.position.set(px, py, Math.random() * 0.4); mesh.scale.setScalar(0.6 + Math.random() * 1.4);
+      mesh.position.set(px, py, Math.random() * 0.4); mesh.scale.setScalar(0.22 + Math.random() * 0.45);
       scene.add(mesh);
       drops.push({ mesh, vx: (Math.random() - 0.5) * 0.15, vy: Math.random() * 0.17, vz: (Math.random() - 0.5) * 0.1, life: 75 });
     }
@@ -495,6 +536,7 @@ const Arena3D = (() => {
     key.shadow.mapSize.set(1024, 1024); key.shadow.camera.left = -12; key.shadow.camera.right = 12;
     key.shadow.camera.top = 9; key.shadow.camera.bottom = -9; scene.add(key);
     light = new T.PointLight('#80c6ff', 16, 25); light.position.set(4, 5, 2); scene.add(light);
+    const rim = new T.DirectionalLight('#9fc8ff', 1.6); rim.position.set(0, 6, -9); scene.add(rim);
     loadRealModels();
     resize(); addEventListener('resize', resize);
   } catch (e) { if (renderer) renderer.dispose(); renderer = null; }

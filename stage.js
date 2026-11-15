@@ -42,7 +42,7 @@ function grad(ctx, y0, y1, a, b) {
   const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, a); g.addColorStop(1, b); return g;
 }
 
-function drawStation(ctx, st, t, bgTrain) {
+function drawStation(ctx, st, t, bgTrain, wallOnly) {
   // shift
   ctx.fillStyle = grad(ctx, 0, 130, '#111', st.wall[1]);
   ctx.fillRect(0, 0, W, 130);
@@ -74,6 +74,11 @@ function drawStation(ctx, st, t, bgTrain) {
   ctx.beginPath(); ctx.arc(sx - 40, 207, 26, 0, Math.PI * 2); ctx.fillStyle = '#d42a2a'; ctx.fill();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif'; ctx.fillText('M', sx - 40, 209);
 
+  if (wallOnly) { // 3D rejim: devor + yo'l chuquri; ustun va qandillar 3D'da quriladi
+    ctx.fillStyle = '#0b0b0e'; ctx.fillRect(0, 410, W, H - 410);
+    ctx.fillStyle = '#3b3b40'; ctx.fillRect(0, 440, W, 4); ctx.fillRect(0, 456, W, 4);
+    return;
+  }
   // yo'l (relslar) chuquri
   ctx.fillStyle = '#0b0b0e'; ctx.fillRect(0, 410, W, 58);
   ctx.fillStyle = '#3b3b40';
