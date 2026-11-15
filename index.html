@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<!-- Metro Jang: original 2D jang o'yini. Phaser 3 lib/ ichida — internet shart emas. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<meta name="theme-color" content="#05070d">
+<title>Metro Jang</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; font-family: "Trebuchet MS", "Segoe UI", sans-serif; color: #fff; }
+  #game { position: fixed; inset: 0; }
+  #game > canvas:not(#arena3d) { position: relative; z-index: 1; }
+  #overlay { position: fixed; left: 50%; top: 50%; width: 1280px; height: 720px; transform-origin: center; pointer-events: none; }
+  #ui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: auto; background: radial-gradient(rgba(5,8,18,.2), rgba(5,8,18,.6)); }
+  #corner { position: absolute; right: 14px; bottom: 12px; display: flex; gap: 8px; pointer-events: auto; }
+  #corner button { font: bold 14px "Trebuchet MS", sans-serif; color: #fff; background: rgba(10,20,40,.8); border: 1px solid #3b4f86; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  #corner button:hover { border-color: #ffc531; }
+  .note { color: #8d9bc4; font-size: 14px; }
+  .row { display: flex; gap: 8px; justify-content: center; }
+  .cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px !important; max-width: 1200px; }
+  .card { box-sizing: border-box; width: 220px !important; padding: 6px !important; font-size: 13px !important; gap: 2px !important; }
+  .card canvas { width: 142px; height: 142px; }
+  .card b { font-size: 20px !important; } .card i { font-size: 12px !important; }
+  .card .spc { min-height: 0 !important; font-size: 12px !important; }
+  .btn.on { border-color: #ffc531; color: #ffc531; }
+  .bracket { display: flex; gap: 30px; background: rgba(5,8,18,.85); padding: 16px 24px; border-radius: 12px; border: 1px solid #3b4f86; }
+  .bcol { display: flex; flex-direction: column; justify-content: space-around; gap: 8px; min-width: 140px; } .bcol b { color: #ffc531; }
+  .bname { background: #1d2848; border: 1px solid #4a5d99; border-radius: 6px; padding: 6px 10px; }
+  .tname { width: 220px; font-size: 18px; padding: 6px; margin: 4px; background: #0b1020; color: #fff; border: 1px solid #3b4f86; border-radius: 6px; }
+  .ctl.set:has(.tname) { flex-direction: row; flex-wrap: wrap; max-width: 980px; }
+  .btn.glow { border-color: #6dff8a; box-shadow: 0 0 14px rgba(109,255,138,.6); }
+  #touch { position: absolute; inset: 0; pointer-events: none; display: none; }
+  .tbtn { position: absolute; width: 104px; height: 104px; border-radius: 50%; background: rgba(20,30,60,.45); border: 3px solid rgba(255,255,255,.35); color: #fff;
+    display: flex; align-items: center; justify-content: center; font: bold 18px "Trebuchet MS", sans-serif; pointer-events: auto; user-select: none; -webkit-user-select: none; touch-action: none; }
+  .tbtn.pad { width: 116px; height: 116px; font-size: 34px; border-radius: 22px; } .tbtn.on { background: rgba(255,197,49,.55); }
+  body { touch-action: none; }
+  .toast { position: absolute; left: 50%; top: 40px; transform: translateX(-50%); background: #2a1240; border: 2px solid #b46bff; padding: 12px 20px; border-radius: 10px; font-size: 18px; pointer-events: none; }
+  textarea { width: 620px; height: 60px; display: block; margin-top: 6px; background: #0b1020; color: #cfe; border: 1px solid #3b4f86; border-radius: 6px; font: 12px monospace; }
+  /* komiks uslubidagi suhbat */
+  .dlg { background: #fff8e6 !important; color: #111; border: 5px solid #111 !important; border-radius: 4px !important; box-shadow: 10px 10px 0 #000; transform: rotate(-0.6deg);
+    background-image: radial-gradient(rgba(0,0,0,.12) 1.2px, transparent 1.4px) !important; background-size: 8px 8px !important; }
+  .dlg .dtext { position: relative; background: #fff; border: 4px solid #111; border-radius: 22px; padding: 14px 20px; }
+  .dlg .dtext:before { content: ''; position: absolute; left: -22px; top: 30px; border: 12px solid transparent; border-right: 12px solid #111; }
+  .dlg .dtext b { color: #b3261e !important; font-family: Impact, sans-serif; letter-spacing: 1px; } .dlg .dtext p { color: #111; font-weight: bold; }
+  .dlg canvas { border: 4px solid #111 !important; }
+  .remap td { padding: 3px 12px; } .btn.key { min-width: 90px; padding: 4px 10px; font-size: 16px; }
+  .dlg { display: flex; gap: 24px; align-items: center; background: rgba(5,8,18,.9); border: 1px solid #3b4f86; border-radius: 14px; padding: 20px 28px; max-width: 980px; text-align: left; }
+  .dlg canvas { border: 2px solid #ffc531; border-radius: 10px; }
+  .dtext b { font-size: 26px; color: #ffc531; } .dtext p { font-size: 22px; line-height: 1.4; margin: 8px 0 0; }
+  .narr { font-size: 64px; color: #b46bff; width: 120px; text-align: center; }
+  .set { flex-direction: column; gap: 16px; font-size: 20px; } .set input { width: 260px; vertical-align: middle; margin-left: 12px; }
+  .moveslist { max-height: 520px; overflow: auto; } .moveslist td { font-size: 14px; vertical-align: top; } .moveslist small { color: #9fb0d8; }
+  .screen { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; max-width: 1200px; }
+  .logo { font: italic 900 110px Impact, "Arial Black", sans-serif; letter-spacing: 4px; color: #ffc531;
+    text-shadow: 0 6px 0 #7a1010, 0 0 40px rgba(255,80,40,.6); line-height: 1; }
+  .logo span { color: #ff3b3b; text-shadow: 0 6px 0 #3a0000, 0 0 40px rgba(255,60,60,.7); }
+  .tag { font-size: 22px; color: #d8e2ff; max-width: 900px; text-shadow: 0 2px 4px #000; }
+  h1 { font: italic 900 58px Impact, "Arial Black", sans-serif; margin: 0; color: #ffc531; text-shadow: 0 4px 0 #000; letter-spacing: 2px; }
+  h1.win { color: #6dff8a; font-size: 80px; } h1.lose { color: #ff5a5a; font-size: 80px; }
+  .menu { display: flex; flex-direction: column; gap: 10px; min-width: 520px; margin-top: 10px; }
+  .btn { font: bold 24px "Trebuchet MS", sans-serif; color: #fff; background: linear-gradient(#26345a, #141c33);
+    border: 2px solid #3b4f86; border-radius: 10px; padding: 12px 22px; cursor: pointer; outline: none; }
+  .btn small { font-weight: normal; font-size: 17px; color: #b9c6ea; }
+  .btn.small { font-size: 18px; padding: 8px 18px; align-self: center; }
+  .btn:hover, .btn:focus { border-color: #ffc531; background: linear-gradient(#3a4c80, #1d2848); box-shadow: 0 0 18px rgba(255,197,49,.5); }
+  .foot { font-size: 15px; color: #8d9bc4; margin-top: 18px; }
+  .cards { display: flex; gap: 16px; }
+  .card { width: 250px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 16px; }
+  .card canvas { border-radius: 8px; }
+  .card b { font-size: 26px; } .card i { color: #b9c6ea; font-size: 15px; }
+  .stats { display: grid; grid-template-columns: 60px 1fr; gap: 4px 8px; width: 100%; align-items: center; font-size: 13px; text-align: left; }
+  .stats em { height: 8px; background: linear-gradient(90deg, #ffc531 var(--v), #2a3354 var(--v)); border-radius: 4px; }
+  .spc { font-size: 13px; color: #d8e2ff; min-height: 52px; } .spc b { font-size: 14px; color: #ffc531; }
+  .ctl { display: flex; gap: 30px; text-align: left; background: rgba(5,8,18,.85); padding: 18px 24px; border-radius: 12px; border: 1px solid #3b4f86; }
+  .ctl table { border-collapse: collapse; font-size: 17px; }
+  .ctl th { color: #ffc531; text-align: left; padding: 4px 12px; }
+  .ctl td { padding: 5px 12px; border-top: 1px solid #222c4a; }
+  kbd { background: #1d2848; border: 1px solid #4a5d99; border-radius: 5px; padding: 2px 8px; font-family: inherit; }
+  .moves { max-width: 520px; font-size: 15px; line-height: 1.35; }
+  .moves h3 { margin: 0 0 6px; color: #ffc531; } .moves p { margin: 4px 0; }
+  .vs { display: flex; align-items: center; gap: 40px; }
+  .vs > div { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 32px; }
+  .vs canvas { border: 3px solid #ffc531; border-radius: 10px; }
+  .vsx { font: italic 900 64px Impact, sans-serif; color: #ff3b3b; text-shadow: 0 4px 0 #000; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="overlay">
+  <div id="ui"></div>
+  <div id="corner">
+    <button id="bPause" data-act="pause" style="display:none">Pauza (Esc)</button>
+    <button id="bMute" data-act="mute">Ovoz yoqiq</button>
+  </div>
+</div>
+<script src="lib/phaser.min.js"></script>
+<script src="lib/three-gltf.min.js"></script>
+<script src="assets/models.js"></script>
+<script src="settings.js"></script>
+<script src="audio.js"></script>
+<script src="music.js"></script>
+<script src="stage.js"></script>
+<script src="fighter.js"></script>
+<script src="story.js"></script>
+<script src="modes.js"></script>
+<script src="tutorial.js"></script>
+<script src="extra.js"></script>
+<script src="online.js"></script>
+<script src="arena3d.js"></script>
+<script src="finishers.js"></script>
+<script src="game.js"></script>
+<script src="touch.js"></script>
+<script>if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "Metro Jang",
+  "short_name": "Metro Jang",
+  "description": "Toshkent metrosidan ilhomlangan 2D jang o'yini",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "lang": "uz",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
