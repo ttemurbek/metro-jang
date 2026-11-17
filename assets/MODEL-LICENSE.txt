@@ -10,6 +10,6 @@ https://opengameart.org/content/universal-animation-library. Only the listed cli
 
 Mocap clips (assets/mocap.js), baked to joint positions:
 - kick_front, kick_round, kick_side: CMU Graphics Lab Motion Capture Database, subject 135 (karate),
-  trials 04, 07 and 11 (http://mocap.cs.cmu.edu, "free for all uses"), BVH conversion from
+  trials 04, 07 and 11; jump kick 75_16; get-up 140_08 (http://mocap.cs.cmu.edu, "free for all uses"), BVH conversion from
   https://github.com/una-dinosauria/cmu-mocap.
 - walk, crouch, knock, hook: Quaternius Universal Animation Library 1 and 2 (Standard), CC0 1.0.

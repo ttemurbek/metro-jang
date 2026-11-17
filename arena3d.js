@@ -69,6 +69,21 @@ const Arena3D = (() => {
     if (def.shadow || def.glow) { const l = new T.PointLight(def.shadow ? '#9a50ff' : def.glow, 3, 4); head && head.add(l); }
   }
 
+  // Tana tuzilishi: kuchli jangchilar keng yelkali va yo'g'on, chaqqonlari ozg'in (suyaklarni ko'ndalang kattalashtirish)
+  function build(rig, nodeOf, def) {
+    let b = Math.max(-0.35, Math.min(0.55, ((def.power || 1) - 1) * 2.6)); if (def.female) b *= 0.55;
+    const want = { spine_02: 1 + 0.12 * b, spine_03: 1 + 0.2 * b, neck_01: 1 + 0.16 * b, upperarm_l: 1 + 0.28 * b, upperarm_r: 1 + 0.28 * b, lowerarm_l: 1 + 0.2 * b, lowerarm_r: 1 + 0.2 * b,
+      thigh_l: 1 + 0.2 * b, thigh_r: 1 + 0.2 * b, calf_l: 1 + 0.15 * b, calf_r: 1 + 0.15 * b };
+    const worldS = n => { let k = 1; for (let p = n; p; p = p.parent) if (p.isBone && p.userData.buildS) k *= p.userData.buildS; return k; };
+    for (const name of Object.keys(want)) {
+      const R = rig[name]; if (!R || Math.abs(R.childDir.y) < 0.85) continue;
+      const parentS = worldS(R.node.parent), own = want[name] / parentS;
+      R.node.userData.buildS = own; R.node.scale.set(own, 1, own);
+      for (const ch of R.node.children) if (ch.isBone && !want[ch.name]) { ch.userData.buildS = 1 / want[name]; ch.scale.set(1 / want[name], 1, 1 / want[name]); }
+    }
+    return rig.spine_03 ? rig.spine_03.node.scale.x : 1;
+  }
+
   function makeRealFighter(def, parent) {
     const template = realTemplates[modelKind(def)];
     if (!template || !window.MetroGLTF) return null;
@@ -127,8 +142,9 @@ const Arena3D = (() => {
     const legLen = nodeOf('thigh_l') && nodeOf('foot_l') ? wp('thigh_l').distanceTo(wp('calf_l')) + wp('calf_l').distanceTo(wp('foot_l')) : 0.9;
     const pelvis = nodeOf('pelvis') || (nodeOf('spine_01') && nodeOf('spine_01').parent);
     const fwd = nodeOf('foot_l') && nodeOf('ball_l') ? Math.sign(wp('ball_l').z - wp('foot_l').z) || 1 : 1;
+    const chestS = build(rig, nodeOf, def);
     dress(rig, nodeOf, def);
-    return { root, body, bones, rig, legLen, pelvis, fwd, real: Object.keys(rig).length >= 10,
+    return { root, body, bones, rig, legLen, pelvis, fwd, chestS, real: Object.keys(rig).length >= 10,
       def, lastHp: 100 * (def.hpMul || 1), pose: {}, motion: 0 };
   }
   const mat = (color, extra = {}) => new T.MeshStandardMaterial({ color, roughness: 0.67, metalness: 0.08, ...extra });
@@ -451,8 +467,7 @@ const Arena3D = (() => {
       model.root.position.x -= face * model.jx * 0.18;
     }
     // nafas olish: turganda ko'krak sekin ko'tarilib tushadi
-    if (model.rig.spine_03 && (f.state === 'idle' || f.state === 'walk')) model.rig.spine_03.node.scale.setScalar(1 + Math.sin(g.t * 0.07 + f.side) * 0.012);
-    else if (model.rig.spine_03) model.rig.spine_03.node.scale.setScalar(1);
+    if (model.rig.spine_03) { const br = f.state === 'idle' || f.state === 'walk' ? Math.sin(g.t * 0.07 + f.side) * 0.012 : 0, cs = model.chestS || 1; model.rig.spine_03.node.scale.set(cs * (1 + br), 1 + br, cs * (1 + br)); }
     const hr = Math.max(0, f.hp / (f.maxHp || 100));
     if (model.hurtLevel === undefined || Math.abs(model.hurtLevel - hr) > 0.04) {
       model.hurtLevel = hr;
@@ -482,6 +497,14 @@ const Arena3D = (() => {
   function mocapFor(f) {
     if (!MC) return null;
     const C = MC.clips;
+    if (f.state === 'jatk' && f.atk && f.atk.pose === 'jkick' && C.jkick) {
+      const c = C.jkick, A = f.atk, pk = c.peak, af = f.af;
+      const fr = af < A.start ? pk * af / A.start : af < A.start + A.act ? pk : pk + (c.n - 1 - pk) * Math.min(1, (af - A.start - A.act) / Math.max(1, A.rec + 6));
+      return [c, fr, ALL, 1];
+    }
+    // yerdan turish: chalqancha yotgan holatdan (mocap ancha uzun, o'yin vaqtiga siqiladi)
+    if (f.state === 'down' && C.getup && f.t >= 28 && f.hp > 0) { const c = C.getup; return [c, (f.t - 28) * 2.4, ALL, 1]; }
+    if (f.state === 'getup' && C.getup) { const c = C.getup; return [c, Math.min(c.n - 1, 48 + f.t * 4), ALL, 1]; }
     if (f.state === 'attack' && f.atk) {
       const A = f.atk, pose = A.pose, name = pose === 'kick' ? 'kick_front' : pose === 'kickh' ? 'kick_side' : pose === 'round' ? 'kick_round' : (pose === 'hook' || pose === 'heavyp') ? 'hook' : null;
       if (!name) return null;
