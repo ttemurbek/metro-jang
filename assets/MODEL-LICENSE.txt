@@ -7,3 +7,9 @@ Fighting animations (assets/anims.js: Punch_Jab, Punch_Cross, Punch_Enter, Hit_C
 and the female body (assets/female.js: Mannequin_F) come from Quaternius "Universal Animation Library" and
 "Universal Animation Library 2" (Standard), CC0 1.0 (public domain). Source: https://quaternius.com and
 https://opengameart.org/content/universal-animation-library. Only the listed clips/meshes were kept.
+
+Mocap clips (assets/mocap.js), baked to joint positions:
+- kick_front, kick_round, kick_side: CMU Graphics Lab Motion Capture Database, subject 135 (karate),
+  trials 04, 07 and 11 (http://mocap.cs.cmu.edu, "free for all uses"), BVH conversion from
+  https://github.com/una-dinosauria/cmu-mocap.
+- walk, crouch, knock, hook: Quaternius Universal Animation Library 1 and 2 (Standard), CC0 1.0.

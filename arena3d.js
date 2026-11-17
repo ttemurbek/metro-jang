@@ -437,6 +437,7 @@ const Arena3D = (() => {
       R.node.updateMatrixWorld(true);
     }
     applyClip(model, f, face);
+    applyMocap(model, f, face);
     // zarbaga og'ir reaksiya: bosh va tana orqaga siltanadi, keyin prujina kabi qaytadi
     if (f.hp < model.lastHp - 0.1) model.jv = (model.jv || 0) + Math.min(0.9, (model.lastHp - f.hp) * 0.09);
     model.jv = ((model.jv || 0) - (model.jx || 0) * 0.22) * 0.8; model.jx = (model.jx || 0) + model.jv;
@@ -473,6 +474,46 @@ const Arena3D = (() => {
     m.scale.set(r, r * 0.5, r);
     m.position.copy(R.childDir).multiplyScalar(R.len * Math.random()).add(new T.Vector3((Math.random() - .5), 0, (Math.random() - .5)).multiplyScalar(0.12 * R.k));
     R.node.add(m); model.wounds.push(m);
+  }
+
+  // Haqiqiy mocap (CMU karate tepishlari, Quaternius yurish/yiqilish/turish): bo'g'in nuqtalaridan suyak yo'nalishlari
+  const MC = window.MetroMocap, MCJ = MC ? Object.fromEntries(MC.joints.map((n, i) => [n, i])) : {};
+  const LEGS = ['thigh', 'calf'], ALL = null;
+  function mocapFor(f) {
+    if (!MC) return null;
+    const C = MC.clips;
+    if (f.state === 'attack' && f.atk) {
+      const A = f.atk, pose = A.pose, name = pose === 'kick' ? 'kick_front' : pose === 'kickh' ? 'kick_side' : pose === 'round' ? 'kick_round' : (pose === 'hook' || pose === 'heavyp') ? 'hook' : null;
+      if (!name) return null;
+      const c = C[name], pk = c.peak, af = f.af, end = A.start + A.act + A.rec;
+      const fr = af < A.start ? pk * Math.pow(af / A.start, 0.85) : af < A.start + A.act ? pk + 2 * (af - A.start) / A.act : pk + 2 + (c.n - 3 - pk) * Math.min(1, (af - A.start - A.act) / A.rec);
+      return [c, Math.min(c.n - 1, fr), name === 'hook' ? ['spine', 'neck', 'upperarm', 'lowerarm'] : ALL, af > end - 4 ? 0.5 : 1];
+    }
+    if (f.state === 'walk') { const c = C.walk; return [c, (f.t * 0.9 * (f.def.speed / 4) * (f.vx * f.face < 0 ? -1 : 1) % c.n + c.n) % c.n, LEGS, 1]; }
+    if (f.state === 'crouch') { const c = C.crouch; return [c, Math.min(c.n - 1, 30 + (f.t % 50)), ['thigh', 'calf', 'spine'], 1]; }
+    if (f.state === 'hit' && (f.stun || 0) >= 20) { const c = C.knock; return [c, Math.min(c.n - 1, f.t * 1.2), ALL, 1]; }
+    return null;
+  }
+  const MCB = [['spine_01', 'hip', 'neck'], ['spine_02', 'hip', 'neck'], ['spine_03', 'hip', 'neck'], ['neck_01', 'neck', 'head'],
+    ['upperarmN', 'shN', 'elN'], ['lowerarmN', 'elN', 'haN'], ['upperarmF', 'shF', 'elF'], ['lowerarmF', 'elF', 'haF'],
+    ['thighN', 'upN', 'knN'], ['calfN', 'knN', 'ftN'], ['thighF', 'upF', 'knF'], ['calfF', 'knF', 'ftF']];
+  const _mv = new T.Vector3(), _mq = new T.Quaternion(), _mq2 = new T.Quaternion();
+  function applyMocap(model, f, face) {
+    const m = mocapFor(f);
+    if (!m) { model.mcW = 0; return; }
+    const [c, fr, subset, wMax] = m, i0 = Math.floor(fr), i1 = c.loop ? (i0 + 1) % c.n : Math.min(c.n - 1, i0 + 1), u = fr - i0, A = c.f[i0], B = c.f[i1];
+    model.mcW = Math.min(wMax, (model.mcW || 0) + 0.34);
+    const near = face > 0 ? '_r' : '_l', far = face > 0 ? '_l' : '_r';
+    const P = j => { const k = MCJ[j] * 3; return _mv.set(face * (A[k] + (B[k] - A[k]) * u), A[k + 1] + (B[k + 1] - A[k + 1]) * u, A[k + 2] + (B[k + 2] - A[k + 2]) * u).clone(); };
+    for (const [bn0, a, b] of MCB) {
+      if (subset && !subset.some(s => bn0.startsWith(s))) continue;
+      const bn = bn0.replace(/N$/, near).replace(/F$/, far), R = model.rig[bn]; if (!R) continue;
+      const want = P(b).sub(P(a)); if (want.lengthSq() < 1e-8) continue; want.normalize();
+      R.node.parent.getWorldQuaternion(_mq).invert(); want.applyQuaternion(_mq);
+      const restDir = _v2.copy(R.childDir).applyQuaternion(R.restQ);
+      _mq2.setFromUnitVectors(restDir, want).multiply(R.restQ);
+      R.node.quaternion.slerp(_mq2, model.mcW); R.node.updateMatrixWorld(true);
+    }
   }
 
   // Haqiqiy (mocap) animatsiya: o'yin holatiga mos klipni tanlab, uning suyak yo'nalishlarini modelga ko'chiradi
