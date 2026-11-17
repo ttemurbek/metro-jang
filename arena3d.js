@@ -7,6 +7,7 @@ const Arena3D = (() => {
   const T = THREE, W3 = 16, fighters = [null, null], drops = [], stains = [], bursts = [];
   const projectiles = new Map(), pickups = new Map(), ringFx = new Map();
   let camX = 0, camZ = 11;
+  const _zAxis = new T.Vector3(0, 0, 1);
   let renderer, scene, camera, stage, stageKey = '', active = false, lastFrame = -1, light, backdropTexture = null;
   let portraitRenderer, portraitScene, portraitCamera;
   const portraitModels = new Map();
@@ -35,7 +36,7 @@ const Arena3D = (() => {
   }
   // Har jangchining kiyimi: suyaklarga biriktirilgan shim, ko'ylak/kurtka, kamar, qo'lqop, soch, poyabzal
   function dress(rig, nodeOf, def) {
-    const dark = !!def.shadow, M = c => mat(dark ? '#0d0b14' : c, { roughness: 0.85 });
+    const dark = !!def.shadow, M = c => clothMat(dark ? '#0d0b14' : c);
     const Y = new T.Vector3(0, 1, 0);
     const seg = (bn, rw, f0, f1, m, taper = 1) => {
       const R = rig[bn]; if (!R) return;
@@ -48,7 +49,7 @@ const Arena3D = (() => {
       if (!node) return; const mesh = new T.Mesh(sphere, m); mesh.scale.set(rw * k, rw * k * sy, rw * k); mesh.position.set(0, up * k, 0); mesh.castShadow = true; node.add(mesh);
     };
     const full = def.jacket || def.hoodie;
-    const shortsM = M(def.shorts || '#222833'), topM = def.top ? M(def.top) : null, trimM = M(def.trim || '#bda674'), gloveM = mat(dark ? '#1a0f2a' : def.gloves || '#2a2a2a', { roughness: 0.35 });
+    const shortsM = M(def.shorts || '#222833'), topM = def.top ? M(def.top) : null, trimM = M(def.trim || '#bda674'), gloveM = new T.MeshPhysicalMaterial({ color: dark ? '#1a0f2a' : def.gloves || '#2a2a2a', roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.3, normalMap: skinNormal, normalScale: new T.Vector2(0.25, 0.25) });
     for (const sd of ['_l', '_r']) {
       if (full) { seg('thigh' + sd, 0.092, 0, 1, shortsM, 0.85); seg('calf' + sd, 0.07, 0, 0.95, shortsM, 0.85); ball(nodeOf('foot' + sd), rig['calf' + sd] ? rig['calf' + sd].k : 1, 0.07, M('#1b1b1b'), 0.03, 0.6); }
       else seg('thigh' + sd, 0.1, 0, 0.5, shortsM, 0.92);
@@ -80,9 +81,10 @@ const Arena3D = (() => {
       if (node.isMesh) {
         node.castShadow = true; node.receiveShadow = true;
         node.material = Array.isArray(node.material) ? node.material.map(m => m.clone()) : node.material.clone();
+        if (!Array.isArray(node.material) && node.geometry.attributes.uv) { const old = node.material; node.material = skinMat(old.color ? old.color.clone() : '#c08a60', { map: old.map || null }); }
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const m of materials) {
-          if (m.color) m.color.set(def.shadow ? '#1a1626' : new T.Color(def.skin || '#c08a60').lerp(new T.Color('#ffffff'), 0.35));
+          if (m.color) m.color.set(def.shadow ? '#1a1626' : new T.Color(def.skin || '#c08a60').lerp(new T.Color('#f2d2bd'), 0.25));
           if (def.shadow && m.emissive) { m.emissive.set('#2a0f45'); m.emissiveIntensity = 0.6; }
           m.side = T.DoubleSide;
         }
@@ -90,6 +92,29 @@ const Arena3D = (() => {
     });
     // Suyaklarni o'yin skeletiga yo'nalish bo'yicha moslash uchun tinch holat ma'lumotlari
     root.scale.setScalar(1); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+    // MakeHuman eksportida qolib ketgan yordamchi geometriya (yubka, kolgotka, yo'naltiruvchi chiziqlar) oyoqlar orasida
+    // "yubka" bo'lib cho'zilardi: asosiy tanadan alohida, katta bo'laklarni ko'rinmaydigan qilamiz.
+    body.traverse(m => {
+      if (!m.isSkinnedMesh || !m.geometry.index || m.geometry.userData.helpersOff !== undefined) return;
+      const geo = m.geometry, pos = geo.attributes.position, ix = geo.index, n = pos.count, par = new Int32Array(n);
+      for (let i = 0; i < n; i++) par[i] = i;
+      const find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; }, join = (a, b) => { a = find(a); b = find(b); if (a !== b) par[a] = b; };
+      const seen = new Map(), v = new T.Vector3();
+      for (let i = 0; i < n; i++) { v.fromBufferAttribute(pos, i); const k = Math.round(v.x * 2000) + ',' + Math.round(v.y * 2000) + ',' + Math.round(v.z * 2000); if (seen.has(k)) join(i, seen.get(k)); else seen.set(k, i); }
+      for (let t = 0; t < ix.count; t += 3) { join(ix.getX(t), ix.getX(t + 1)); join(ix.getX(t), ix.getX(t + 2)); }
+      const comps = new Map();
+      for (let i = 0; i < n; i++) {
+        const r = find(i); let c = comps.get(r); if (!c) comps.set(r, c = { n: 0, lo: new T.Vector3(1e9, 1e9, 1e9), hi: new T.Vector3(-1e9, -1e9, -1e9) });
+        v.fromBufferAttribute(pos, i); c.n++; c.lo.min(v); c.hi.max(v);
+      }
+      const list = [...comps.entries()].sort((a, b) => b[1].n - a[1].n), main = list[0][1];
+      if (main.hi.y - main.lo.y < 1.2) { geo.userData.helpersOff = 0; return; } // butun tana bitta bo'lak emas: tegmaymiz
+      const drop = new Set(list.slice(1).filter(([, c]) => c.hi.y - c.lo.y > 0.25).map(([r]) => r));
+      if (!drop.size) { geo.userData.helpersOff = 0; return; }
+      const keep = [];
+      for (let t = 0; t < ix.count; t += 3) { const a = ix.getX(t); if (!drop.has(find(a))) keep.push(a, ix.getX(t + 1), ix.getX(t + 2)); }
+      geo.setIndex(keep); geo.userData.helpersOff = drop.size;
+    });
     const nodeOf = n => { const b = bones[n] || bones[n[0].toUpperCase() + n.slice(1)]; return b && b.node; }, wp = n => nodeOf(n).getWorldPosition(new T.Vector3());
     const rig = Object.create(null);
     for (const [b, c] of [['spine_01', 'spine_02'], ['spine_02', 'spine_03'], ['spine_03', 'neck_01'], ['neck_01', 'head'],
@@ -107,8 +132,43 @@ const Arena3D = (() => {
       def, lastHp: 100 * (def.hpMul || 1), pose: {}, motion: 0 };
   }
   const mat = (color, extra = {}) => new T.MeshStandardMaterial({ color, roughness: 0.67, metalness: 0.08, ...extra });
-  const black = mat('#111218'), white = mat('#e7e8dd'), bloodMat = new T.MeshStandardMaterial({ color: '#8e0611', roughness: 0.34 });
-  const sphere = new T.SphereGeometry(1, 12, 9), dropGeo = new T.SphereGeometry(0.055, 6, 5);
+  // Kodda yasalgan detal teksturalari: teri g'ovaklari, mato to'qimasi, yumshoq nur, qon dog'i
+  function canvasTex(size, draw, normal) {
+    const c = document.createElement('canvas'); c.width = c.height = size; const x = c.getContext('2d'); draw(x, size);
+    if (normal) { // balandlik xaritasidan normal xarita
+      const src = x.getImageData(0, 0, size, size), out = x.createImageData(size, size), h = (i, j) => src.data[(((j + size) % size) * size + ((i + size) % size)) * 4] / 255;
+      for (let j = 0; j < size; j++) for (let i = 0; i < size; i++) {
+        const dx = (h(i - 1, j) - h(i + 1, j)) * normal, dy = (h(i, j - 1) - h(i, j + 1)) * normal, l = Math.hypot(dx, dy, 1), o = (j * size + i) * 4;
+        out.data[o] = (dx / l * 0.5 + 0.5) * 255; out.data[o + 1] = (dy / l * 0.5 + 0.5) * 255; out.data[o + 2] = (1 / l * 0.5 + 0.5) * 255; out.data[o + 3] = 255;
+      }
+      x.putImageData(out, 0, 0);
+    }
+    const t = new T.CanvasTexture(c); t.wrapS = t.wrapT = T.RepeatWrapping; return t;
+  }
+  const rnd = (() => { let a = 1234567; return () => ((a = (a * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); })();
+  const skinNormal = canvasTex(256, (x, n) => {
+    x.fillStyle = '#808080'; x.fillRect(0, 0, n, n);
+    for (let i = 0; i < 2600; i++) { const v = 100 + rnd() * 70 | 0; x.fillStyle = `rgba(${v},${v},${v},0.5)`; x.beginPath(); x.arc(rnd() * n, rnd() * n, 0.6 + rnd() * 1.6, 0, 7); x.fill(); }
+  }, 2.2);
+  skinNormal.repeat.set(10, 10);
+  const clothNormal = canvasTex(128, (x, n) => {
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const w = ((i >> 2) + (j >> 2)) % 2 ? Math.sin(i * 0.8) : Math.sin(j * 0.8), v = 128 + w * 60 + (rnd() - 0.5) * 30 | 0; x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(i, j, 1, 1); }
+  }, 1.4);
+  clothNormal.repeat.set(5, 5);
+  const softTex = canvasTex(64, (x, n) => { const gr = x.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, n, n); });
+  const splatTex = [0, 1, 2].map(() => canvasTex(128, (x, n) => {
+    x.fillStyle = '#fff';
+    x.beginPath(); x.arc(n / 2, n / 2, n * 0.22, 0, 7); x.fill();
+    for (let i = 0; i < 14; i++) { const a = rnd() * 7, d = n * (0.12 + rnd() * 0.25), rr = n * (0.03 + rnd() * 0.08); x.beginPath(); x.arc(n / 2 + Math.cos(a) * d, n / 2 + Math.sin(a) * d, rr, 0, 7); x.fill(); }
+    for (let i = 0; i < 20; i++) { const a = rnd() * 7, d = n * (0.3 + rnd() * 0.17); x.beginPath(); x.arc(n / 2 + Math.cos(a) * d, n / 2 + Math.sin(a) * d, 1 + rnd() * 2.5, 0, 7); x.fill(); }
+  }));
+  const skinMat = (color, extra = {}) => new T.MeshPhysicalMaterial({ color, roughness: 0.52, metalness: 0, sheen: 0.45, sheenColor: new T.Color('#ff9a85'), sheenRoughness: 0.55,
+    clearcoat: 0.12, clearcoatRoughness: 0.5, normalMap: skinNormal, normalScale: new T.Vector2(0.22, 0.22), ...extra });
+  const clothMat = (color, extra = {}) => new T.MeshPhysicalMaterial({ color, roughness: 0.92, metalness: 0, sheen: 1, sheenColor: new T.Color(color).lerp(new T.Color('#ffffff'), 0.35), sheenRoughness: 0.8,
+    normalMap: clothNormal, normalScale: new T.Vector2(0.6, 0.6), ...extra });
+  const black = mat('#111218'), white = mat('#e7e8dd');
+  const bloodMat = new T.MeshPhysicalMaterial({ color: '#4d0207', roughness: 0.18, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 });
+  const sphere = new T.SphereGeometry(1, 12, 9), dropGeo = new T.SphereGeometry(0.055, 8, 6), stainGeo = new T.PlaneGeometry(1, 1);
   const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
     const m = new T.Mesh(new T.BoxGeometry(w, h, d), material);
     m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; return m;
@@ -377,10 +437,25 @@ const Arena3D = (() => {
       R.node.updateMatrixWorld(true);
     }
     applyClip(model, f, face);
+    // zarbaga og'ir reaksiya: bosh va tana orqaga siltanadi, keyin prujina kabi qaytadi
+    if (f.hp < model.lastHp - 0.1) model.jv = (model.jv || 0) + Math.min(0.9, (model.lastHp - f.hp) * 0.09);
+    model.jv = ((model.jv || 0) - (model.jx || 0) * 0.22) * 0.8; model.jx = (model.jx || 0) + model.jv;
+    if (Math.abs(model.jx) > 0.002) {
+      _q.setFromAxisAngle(_zAxis, face * model.jx * 0.55);
+      for (const [bn, w] of [['spine_02', 0.5], ['spine_03', 0.6], ['neck_01', 1]]) {
+        const R = model.rig[bn]; if (!R) continue;
+        const pq = R.node.parent.getWorldQuaternion(new T.Quaternion()), qw = new T.Quaternion().slerpQuaternions(new T.Quaternion(), _q, w);
+        R.node.quaternion.premultiply(pq.clone().invert().multiply(qw).multiply(pq)); R.node.updateMatrixWorld(true);
+      }
+      model.root.position.x -= face * model.jx * 0.18;
+    }
+    // nafas olish: turganda ko'krak sekin ko'tarilib tushadi
+    if (model.rig.spine_03 && (f.state === 'idle' || f.state === 'walk')) model.rig.spine_03.node.scale.setScalar(1 + Math.sin(g.t * 0.07 + f.side) * 0.012);
+    else if (model.rig.spine_03) model.rig.spine_03.node.scale.setScalar(1);
     const hr = Math.max(0, f.hp / (f.maxHp || 100));
     if (model.hurtLevel === undefined || Math.abs(model.hurtLevel - hr) > 0.04) {
       model.hurtLevel = hr;
-      model.body.traverse(n => { if (n.isMesh && n.material && n.material.emissive && !f.def.shadow) { n.material.emissive.setRGB((1 - hr) * 0.22, 0, 0); n.material.emissiveIntensity = 1; } });
+      model.body.traverse(n => { if (n.isMesh && n.material && n.material.emissive && !f.def.shadow) { n.material.emissive.setRGB((1 - hr) * 0.1, 0, 0); n.material.emissiveIntensity = 1; } });
     }
     model.body.visible = f.state !== 'gone' && !f.hidden;
     if (f.hp < model.lastHp - 0.1 && g.phase !== 'intro') { blood(f.x, f.y, Math.min(12, Math.ceil((model.lastHp - f.hp) * 0.8))); if (model.lastHp - f.hp >= 3) woundMark(model); }
@@ -388,7 +463,7 @@ const Arena3D = (() => {
     model.lastHp = f.hp;
     return model;
   }
-  const woundM = new T.MeshStandardMaterial({ color: '#7a0010', roughness: 0.25, metalness: 0.1 });
+  const woundM = new T.MeshPhysicalMaterial({ color: '#4a0108', roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05 });
   function woundMark(model) {
     if (!model.rig || (Store.d.settings && Store.d.settings.blood === false)) return;
     model.wounds = model.wounds || []; if (model.wounds.length >= 16) return;
@@ -446,11 +521,17 @@ const Arena3D = (() => {
   function blood(x, y, count = 8) {
     if (!scene || !active) return;
     const px = (x / 1280 - 0.5) * W3, py = 2.0 + Math.max(0, (650 - y) / 93);
-    for (let i = 0; i < count; i++) {
-      const mesh = new T.Mesh(dropGeo, bloodMat);
-      mesh.position.set(px, py, Math.random() * 0.4); mesh.scale.setScalar(0.22 + Math.random() * 0.45);
+    for (let i = 0; i < Math.ceil(count * 0.7) + 2; i++) {
+      const mesh = new T.Mesh(dropGeo, bloodMat), s0 = 0.12 + Math.random() * 0.4;
+      mesh.position.set(px, py, Math.random() * 0.4); mesh.scale.setScalar(s0);
       scene.add(mesh);
-      drops.push({ mesh, vx: (Math.random() - 0.5) * 0.15, vy: Math.random() * 0.17, vz: (Math.random() - 0.5) * 0.1, life: 75 });
+      drops.push({ mesh, s0, vx: (Math.random() - 0.5) * 0.11, vy: Math.random() * 0.15, vz: (Math.random() - 0.5) * 0.1, life: 80 });
+    }
+    // qon tumani (mayda purkalish)
+    for (let i = 0; i < 2; i++) {
+      const sp = new T.Sprite(new T.SpriteMaterial({ map: softTex, color: '#5a0207', transparent: true, opacity: 0.35, depthWrite: false }));
+      sp.position.set(px + (Math.random() - 0.5) * 0.3, py + (Math.random() - 0.5) * 0.3, 0.6); sp.scale.setScalar(0.35 + Math.min(count, 10) * 0.03);
+      scene.add(sp); bursts.push({ mesh: sp, mist: true, life: 22 });
     }
   }
   function impact(meta, x, y) {
@@ -470,18 +551,26 @@ const Arena3D = (() => {
   function tickBlood() {
     for (let i = drops.length - 1; i >= 0; i--) {
       const d = drops[i]; d.mesh.position.x += d.vx; d.mesh.position.y += d.vy; d.mesh.position.z += d.vz; d.vy -= 0.012; d.life--;
+      const sp = Math.hypot(d.vx, d.vy); d.mesh.scale.set(d.s0, d.s0 * (1 + sp * 14), d.s0); d.mesh.rotation.z = Math.atan2(d.vy, d.vx) - Math.PI / 2;
       if (d.mesh.position.y <= 0.08 || d.life <= 0) {
-        if (d.mesh.position.y <= 0.08 && stains.length < 70) {
-          const m = new T.Mesh(new T.CircleGeometry(0.05 + Math.random() * 0.08, 9), bloodMat);
-          m.rotation.x = -Math.PI / 2; m.position.set(d.mesh.position.x, 0.015, d.mesh.position.z);
-          stage.add(m); stains.push({ mesh: m, life: 600 });
+        if (d.mesh.position.y <= 0.08 && stains.length < 140) {
+          const m = new T.Mesh(stainGeo, new T.MeshPhysicalMaterial({ color: '#3f0105', roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05, alphaMap: splatTex[stains.length % 3], transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+          m.rotation.set(-Math.PI / 2, 0, Math.random() * 6.28); m.position.set(d.mesh.position.x, 0.012 + stains.length * 0.0001, d.mesh.position.z);
+          const full = 0.12 + d.s0 * 0.7 + Math.random() * 0.1; m.scale.setScalar(full * 0.3);
+          stage.add(m); stains.push({ mesh: m, life: 1500, full });
         }
         scene.remove(d.mesh); drops.splice(i, 1);
       }
     }
-    for (let i = stains.length - 1; i >= 0; i--) if (--stains[i].life <= 0) { stage.remove(stains[i].mesh); stains.splice(i, 1); }
+    for (let i = stains.length - 1; i >= 0; i--) {
+      const st = stains[i], sc = st.mesh.scale.x; if (sc < st.full) st.mesh.scale.setScalar(sc + (st.full - sc) * 0.08); // ko'lmak asta yoyiladi
+      if (st.life < 60) st.mesh.material.opacity = st.life / 60;
+      if (--st.life <= 0) { stage.remove(st.mesh); st.mesh.material.dispose(); stains.splice(i, 1); }
+    }
     for (let i = bursts.length - 1; i >= 0; i--) {
-      const b = bursts[i]; b.life--;
+      const b = bursts[i];
+      if (b.mist) { b.mesh.scale.multiplyScalar(1.03); b.mesh.position.y -= 0.004; b.mesh.material.opacity = b.life / 60; if (--b.life <= 0) { scene.remove(b.mesh); b.mesh.material.dispose(); bursts.splice(i, 1); } continue; }
+      b.life--;
       if (b.ring) b.mesh.scale.setScalar(1 + (28 - b.life) * 0.10);
       else { b.mesh.position.x += b.vx; b.mesh.position.y += b.vy; b.vy -= 0.003; b.mesh.rotation.z += 0.18; }
       b.mesh.material.opacity = Math.max(0, b.life / 32);
@@ -508,9 +597,8 @@ const Arena3D = (() => {
       const color = it.kind === 'kastet' ? '#c9ced6' : it.kind === 'nunchaku' ? '#a7a5a0' : '#99602f';
       const m = new T.Mesh(new T.BoxGeometry(0.52, 0.13, 0.16), mat(color, { metalness: 0.45 })); m.castShadow = true; return m;
     }, (m, it) => m.position.set((it.x / 1280 - 0.5) * W3, 0.14 + Math.sin(g.t * 0.12) * 0.04, 0.9));
-    sync(ringFx, g.rings || [], r => new T.Mesh(new T.TorusGeometry(0.55, 0.045, 6, 24),
-      new T.MeshBasicMaterial({ color: r.color, transparent: true, opacity: 0.8 })),
-      (m, r) => { m.position.set((r.x / 1280 - 0.5) * W3, 2 + (650 - r.y) / 93, 1.3); m.scale.setScalar(Math.max(0.2, (14 - r.life) / 7)); m.material.opacity = r.life / 14; });
+    sync(ringFx, g.rings || [], r => new T.Sprite(new T.SpriteMaterial({ map: softTex, color: r.color === '#fff' ? '#ffe9c8' : r.color, transparent: true, opacity: 0.7, blending: T.AdditiveBlending, depthWrite: false })),
+      (m, r) => { m.position.set((r.x / 1280 - 0.5) * W3, 2 + (650 - r.y) / 93, 1.3); m.scale.setScalar(0.4 + (14 - r.life) * 0.06 * Math.min(2, r.r / 60)); m.material.opacity = (r.life / 14) * 0.7; });
   }
   function resize() {
     if (!renderer) return;
@@ -526,14 +614,21 @@ const Arena3D = (() => {
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, Store.d.settings.quality === 0 ? 1 : 1.5));
     renderer.shadowMap.enabled = Store.d.settings.quality !== 0; renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.18;
+    renderer.toneMappingExposure = 1.05;
     renderer.domElement.id = 'arena3d'; renderer.domElement.style.cssText = 'position:fixed;display:none;pointer-events:none;z-index:0';
     document.getElementById('game').appendChild(renderer.domElement);
     scene = new T.Scene(); camera = new T.PerspectiveCamera(38, 1280 / 720, 0.1, 80);
     camera.position.set(0, 3.7, 14.2); camera.lookAt(0, 2.15, 0);
-    scene.add(new T.HemisphereLight('#c9ddff', '#27202a', 2.0));
-    const key = new T.DirectionalLight('#fff1d7', 2.4); key.position.set(-5, 11, 7); key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024); key.shadow.camera.left = -12; key.shadow.camera.right = 12;
+    scene.add(new T.HemisphereLight('#c9ddff', '#27202a', 0.7));
+    try { // atrof yorug'ligi: shiftdagi iliq chiroqlar va yon tomondagi sovuq nur aks etadigan xona
+      const env = new T.Scene(), room = new T.Mesh(new T.BoxGeometry(30, 12, 30), new T.MeshBasicMaterial({ color: '#1d1b1f', side: T.BackSide })); env.add(room);
+      const panel = (c, w, h, x, y, z, ry, rx) => { const m = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ color: c, side: T.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, 0); env.add(m); };
+      for (let i = -2; i <= 2; i++) panel('#ffe2b0', 2.2, 2.2, i * 5, 5.9, 0, 0, Math.PI / 2);
+      panel('#7fa6d8', 10, 4, -14.9, 2, 0, Math.PI / 2); panel('#ffd2a0', 8, 3, 0, 2, 14.9, Math.PI);
+      const pm = new T.PMREMGenerator(renderer); scene.environment = pm.fromScene(env, 0.04).texture; if ('environmentIntensity' in scene) scene.environmentIntensity = 0.55; pm.dispose();
+    } catch (e) { /* atrof yorug'liksiz ham ishlaydi */ }
+    const key = new T.DirectionalLight('#fff1d7', 2.6); key.position.set(-5, 11, 7); key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02; key.shadow.radius = 3; key.shadow.camera.left = -12; key.shadow.camera.right = 12;
     key.shadow.camera.top = 9; key.shadow.camera.bottom = -9; scene.add(key);
     light = new T.PointLight('#80c6ff', 16, 25); light.position.set(4, 5, 2); scene.add(light);
     const rim = new T.DirectionalLight('#9fc8ff', 1.6); rim.position.set(0, 6, -9); scene.add(rim);

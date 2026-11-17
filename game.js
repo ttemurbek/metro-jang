@@ -627,6 +627,9 @@ const Game = {
     if (Arena3D.ready) {
       ctx.clearRect(0, 0, W, H);
       Arena3D.update(this);
+      // kino uslubidagi chekka qorong'ilashuvi (vignette)
+      if (!this.vig) { this.vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.38, W / 2, H / 2, W * 0.72); this.vig.addColorStop(0, 'rgba(0,0,0,0)'); this.vig.addColorStop(1, 'rgba(0,0,0,0.55)'); }
+      ctx.fillStyle = this.vig; ctx.fillRect(0, 0, W, H);
       if (this.opts.mode === 'practice' && App.frameView) drawFrameData(this);
       if (this.flash) { ctx.fillStyle = `rgba(255,255,255,${this.flash * 0.06})`; ctx.fillRect(0, 0, W, H); }
       this.hud();
