@@ -502,6 +502,15 @@ const Arena3D = (() => {
       const fr = af < A.start ? pk * af / A.start : af < A.start + A.act ? pk : pk + (c.n - 1 - pk) * Math.min(1, (af - A.start - A.act) / Math.max(1, A.rec + 6));
       return [c, fr, ALL, 1];
     }
+    // maxsus usullar: mos mocap tepish/zarba
+    if (f.state === 'special' && f.curSp) {
+      const k = f.curSp.kind, t = f.t, hold = (c, start) => [c, t < start ? c.peak * t / start : Math.min(c.n - 1, c.peak + (t - start) * 0.5), ALL, 1];
+      if (k === 'dash' && C.kick_side) return [C.kick_side, Math.min(C.kick_side.peak, C.kick_side.peak * t / 8), ALL, 1];
+      if (k === 'scissor' && C.kick_round) return hold(C.kick_round, 8);
+      if (k === 'stomp' && C.kick_front) return [C.kick_front, t < 18 ? C.kick_front.peak * t / 18 : Math.min(C.kick_front.n - 1, C.kick_front.peak + (t - 18) * 1.4), ALL, 1];
+      if (k === 'dive' && f.airborne && C.jkick) return [C.jkick, C.jkick.peak, ALL, 1];
+      if ((k === 'elbow' || k === 'overhead') && C.hook) return [C.hook, Math.min(C.hook.n - 1, t < 10 ? C.hook.peak * t / 10 : C.hook.peak + (t - 10) * 0.4), ['spine', 'neck', 'upperarm', 'lowerarm'], 1];
+    }
     // yerdan turish: chalqancha yotgan holatdan (mocap ancha uzun, o'yin vaqtiga siqiladi)
     if (f.state === 'down' && C.getup && f.t >= 28 && f.hp > 0) { const c = C.getup; return [c, (f.t - 28) * 2.4, ALL, 1]; }
     if (f.state === 'getup' && C.getup) { const c = C.getup; return [c, Math.min(c.n - 1, 48 + f.t * 4), ALL, 1]; }
