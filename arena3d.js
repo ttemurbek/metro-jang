@@ -54,7 +54,8 @@ const Arena3D = (() => {
       if (full) { seg('thigh' + sd, 0.092, 0, 1, shortsM, 0.85); seg('calf' + sd, 0.07, 0, 0.95, shortsM, 0.85); ball(nodeOf('foot' + sd), rig['calf' + sd] ? rig['calf' + sd].k : 1, 0.07, M('#1b1b1b'), 0.03, 0.6); }
       else seg('thigh' + sd, 0.1, 0, 0.5, shortsM, 0.92);
       if (full && topM) { seg('upperarm' + sd, 0.06, 0, 1, topM, 0.9); seg('lowerarm' + sd, 0.05, 0, 0.8, topM, 0.9); }
-      ball(nodeOf('hand' + sd), rig['lowerarm' + sd] ? rig['lowerarm' + sd].k : 1, 0.068, gloveM, 0.06);
+      // qo'lqop o'rniga kaft atrofidagi bint (haqiqiy barmoqlar ko'rinib turadi)
+      seg('lowerarm' + sd, 0.034, 0.82, 1.0, gloveM, 1.05);
     }
     seg('spine_01', 0.165, -0.1, 0.45, full ? trimM : shortsM);
     if (topM) {
@@ -84,6 +85,22 @@ const Arena3D = (() => {
     return rig.spine_03 ? rig.spine_03.node.scale.x : 1;
   }
 
+  let _skinMap;
+  function realSkinMap() {
+    if (_skinMap !== undefined) return _skinMap;
+    const t = realTemplates.suited; if (!t) return null;
+    _skinMap = null; t.scene.traverse(n => { if (n.isMesh && !Array.isArray(n.material) && /body/i.test(n.material.name || '') && n.material.map) _skinMap = n.material.map; });
+    return _skinMap;
+  }
+  // Qo'llarni musht qilib yig'ish (barmoq suyaklarini bukish)
+  function makeFists(bones) {
+    for (const name in bones) {
+      const m = /^(index|middle|ring|pinky)_0([123])_[lr]$/i.exec(name), th = /^thumb_0([23])_[lr]$/i.exec(name);
+      if (m) bones[name].node.quaternion.multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), m[2] === '1' ? 1.25 : 1.45));
+      else if (th) bones[name].node.quaternion.multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), 0.6));
+    }
+  }
+
   function makeRealFighter(def, parent) {
     const template = realTemplates[modelKind(def)];
     if (!template || !window.MetroGLTF) return null;
@@ -96,10 +113,17 @@ const Arena3D = (() => {
       if (node.isMesh) {
         node.castShadow = true; node.receiveShadow = true;
         node.material = Array.isArray(node.material) ? node.material.map(m => m.clone()) : node.material.clone();
-        if (!Array.isArray(node.material) && node.geometry.attributes.uv) { const old = node.material; node.material = skinMat(old.color ? old.color.clone() : '#c08a60', { map: old.map || null }); }
+        if (!Array.isArray(node.material) && node.geometry.attributes.uv) {
+          const old = node.material, isSkin = /body/i.test(old.name || '');
+          // erkak modelda "maxsus kostyum" naqshli tekstura bor: o'rniga ikkinchi modelning haqiqiy teri teksturasi (yuz, lab, tirnoq)
+          const map = isSkin ? (realSkinMap() || (modelKind(def) === 'man' ? null : old.map)) : old.map;
+          node.material = skinMat(old.color ? old.color.clone() : '#c08a60', { map: map || null }); node.material.name = old.name; node.material.userData.textured = !!map && isSkin;
+        }
         const materials = Array.isArray(node.material) ? node.material : [node.material];
         for (const m of materials) {
-          if (m.color) m.color.set(def.shadow ? '#1a1626' : new T.Color(def.skin || '#c08a60').lerp(new T.Color('#f2d2bd'), 0.25));
+          const cloth = m.name && !/body/i.test(m.name); // kostyum va poyabzal teri rangiga bo'yalmaydi
+          if (m.color && cloth) m.color.set(def.shadow ? '#1a1626' : new T.Color(/shoe/i.test(m.name) ? '#3a3330' : def.top || def.jacket || def.hoodie || def.shorts || '#555a66').lerp(new T.Color('#ffffff'), 0.3));
+          else if (m.color) m.color.set(def.shadow ? '#1a1626' : m.userData.textured ? new T.Color(def.skin || '#c08a60').lerp(new T.Color('#ffffff'), 0.42) : new T.Color(def.skin || '#c08a60').lerp(new T.Color('#f2d2bd'), 0.25));
           if (def.shadow && m.emissive) { m.emissive.set('#2a0f45'); m.emissiveIntensity = 0.6; }
           m.side = T.DoubleSide;
         }
@@ -124,7 +148,7 @@ const Arena3D = (() => {
       }
       const list = [...comps.entries()].sort((a, b) => b[1].n - a[1].n), main = list[0][1];
       if (main.hi.y - main.lo.y < 1.2) { geo.userData.helpersOff = 0; return; } // butun tana bitta bo'lak emas: tegmaymiz
-      const drop = new Set(list.slice(1).filter(([, c]) => c.hi.y - c.lo.y > 0.25).map(([r]) => r));
+      const drop = new Set(list.slice(1).filter(([, c]) => c.hi.y - c.lo.y > 0.15 || c.n < 150).map(([r]) => r)); // yordamchi qatlamlar va bo'g'in kubiklari
       if (!drop.size) { geo.userData.helpersOff = 0; return; }
       const keep = [];
       for (let t = 0; t < ix.count; t += 3) { const a = ix.getX(t); if (!drop.has(find(a))) keep.push(a, ix.getX(t + 1), ix.getX(t + 2)); }
@@ -142,6 +166,7 @@ const Arena3D = (() => {
     const legLen = nodeOf('thigh_l') && nodeOf('foot_l') ? wp('thigh_l').distanceTo(wp('calf_l')) + wp('calf_l').distanceTo(wp('foot_l')) : 0.9;
     const pelvis = nodeOf('pelvis') || (nodeOf('spine_01') && nodeOf('spine_01').parent);
     const fwd = nodeOf('foot_l') && nodeOf('ball_l') ? Math.sign(wp('ball_l').z - wp('foot_l').z) || 1 : 1;
+    makeFists(bones);
     const chestS = build(rig, nodeOf, def);
     dress(rig, nodeOf, def);
     return { root, body, bones, rig, legLen, pelvis, fwd, chestS, real: Object.keys(rig).length >= 10,
@@ -710,6 +735,7 @@ const Arena3D = (() => {
   } catch (e) { if (renderer) renderer.dispose(); renderer = null; }
   return {
     get ready() { return !!renderer; },
+    _dbg() { return { scene, camera, renderer, fighters, T }; },
     portrait(cv, def) {
       if (!renderer) return false;
       try {
