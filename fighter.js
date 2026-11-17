@@ -198,6 +198,14 @@ const POSES = {
 };
 
 const POSE_KEYS = ['lean', 'ua1', 'la1', 'ua2', 'la2', 'th1', 'sh1', 'th2', 'sh2', 'rot', 'lift'];
+POSES.windup = { lean: -.08, ua1: .25, la1: 2.95, ua2: .55, la2: 2.7, th1: .3, sh1: .05, th2: -.38, sh2: -.08, rot: 0 };
+POSES.chamber = { lean: -.18, ua1: .8, la1: 2.5, ua2: .45, la2: 2.6, th1: 1.45, sh1: -.9, th2: -.12, sh2: 0, rot: 0 };
+// a dan b ga e ulushda o'tish; over > 0 bo'lsa zarba yo'nalishida biroz oshiradi
+function mixPose(a, b, e, over) {
+  const o = {};
+  for (const k of POSE_KEYS) { const av = a[k] || 0, bv = b[k] || 0, base = POSES.idle[k] || 0; o[k] = av + (bv - av) * e + (av - base) * over; }
+  return o;
+}
 const NOHIT = new Set(['down', 'getup', 'ko', 'gone', 'fin', 'thrown', 'held', 'superHit']);
 const GRABBABLE = new Set(['idle', 'walk', 'crouch', 'block', 'blockstun', 'attack', 'grab', 'shootmiss']);
 let MIN_X = 70, MAX_X = W - 70; // bekatga qarab o'zgaradi (platforma kengligi)
@@ -255,6 +263,11 @@ class Fighter {
     if (g.grapple && (g.grapple.a === f || g.grapple.d === f)) return;
     const free = f.state === 'idle' || f.state === 'walk' || f.state === 'crouch' || f.state === 'block';
     if (free && !f.airborne && o.state !== 'thrown') f.face = o.x > f.x ? 1 : -1;
+    // Harakat buyruqlari tarixi (raqam belgilari: 2 past, 3 past-oldinga, 6 oldinga, 4 orqaga, 1 past-orqaga, 5 neytral)
+    { const fw = inp.held[f.face > 0 ? 'right' : 'left'], bk = inp.held[f.face > 0 ? 'left' : 'right'];
+      const tok = inp.held.down ? (fw ? 3 : bk ? 1 : 2) : fw ? 6 : bk ? 4 : 5;
+      if (!f.mh) f.mh = [];
+      if (!f.mh.length || f.mh[f.mh.length - 1].d !== tok) { f.mh.push({ d: tok, t: f.t }); if (f.mh.length > 8) f.mh.shift(); } }
 
     // Uzish: Soya kuchining yarmi evaziga zarbalar zanjirini uzish
     if (f.state === 'hit' && inp.press.block && f.meter >= 50 && g.phase === 'fight') {
@@ -281,10 +294,11 @@ class Fighter {
         if (f.af >= A.start && f.af < A.start + A.act && !f.hitDone) tryHit(f, o, A, g);
         const ch = f.state === 'attack' && chainsFor(f.def, f.atkName);
         if (ch) { for (const btn in ch) if (inp.press[btn]) f.buf = { btn, t: 10 }; if (inp.press.special) f.buf = { btn: 'special', t: 10 }; }
+        if (ch && (inp.press.punch || inp.press.kick || inp.press.heavy)) { const mv = f.motion(); if (mv >= 0) f.buf = { btn: 'special', t: 10, mv }; }
         if (f.buf && --f.buf.t <= 0) f.buf = null;
         if (ch && f.hitDone && f.af >= A.start + A.act && f.buf) {
           // zarba tekkandan keyin maxsus usul bilan bekor qilish ham mumkin
-          if (f.buf.btn === 'special' && f.st >= 30 && f.specialCd <= 0) { f.buf = null; f.startSpecial(g, f.spIdx(inp)); break; }
+          if (f.buf.btn === 'special' && f.st >= 30 && f.specialCd <= 0) { const mv = f.buf.mv; f.buf = null; f.startSpecial(g, mv !== undefined ? mv : f.spIdx(inp)); if (mv !== undefined) f.motionBonus(g); break; }
           if (ch[f.buf.btn]) { const nx = ch[f.buf.btn]; f.buf = null; f.startAtk(nx, g, 'attack', true); if (f.atk !== A) break; }
         }
         if (f.state === 'attack' && f.af >= A.start + A.act + A.rec) f.set('idle');
@@ -368,6 +382,10 @@ class Fighter {
       if (f.st < 8) return f.tired(g);
       f.st -= 6; f.use('grab'); f.set('grab'); return;
     }
+    if (inp.press.punch || inp.press.kick || inp.press.heavy) {
+      const mv = f.motion();
+      if (mv >= 0 && f.specialCd <= 0) { if (f.st < 22) return f.tired(g); f.startSpecial(g, mv); f.motionBonus(g); return; }
+    }
     if (inp.press.heavy) return f.startAtk(inp.held.down ? 'upper' : 'heavy', g);
     if (inp.press.punch) return f.startAtk(inp.held.down ? 'cjab' : 'jab', g);
     if (inp.press.kick) return f.startAtk(inp.held.down ? 'sweep' : 'kick', g);
@@ -382,6 +400,24 @@ class Fighter {
     if (dir) { f.set('walk'); f.vx = dir * f.def.speed * (dir === f.face ? 1 : 0.75); }
     else f.set('idle');
   }
+
+  // pozaga yetish tezligi: zarba tez, qaytish sekin, zarba yeyish keskin
+  poseK(fast) {
+    const f = this;
+    if (fast === undefined) fast = f.state === 'attack' || f.state === 'special' || f.state === 'jatk' || f.state === 'super';
+    return f.state === 'attack' && f.atk && f.af >= f.atk.start + f.atk.act ? 0.35 : fast ? 0.6 : f.state === 'hit' ? 0.7 : 0.3;
+  }
+  // ↓↘→ = 1-usul, →↓↘ = 2-usul, ↓↙← = 3-usul (so'nggi 16 kadr ichida)
+  motion() {
+    const h = this.mh || [], now = this.t;
+    let s = '';
+    for (let i = 0; i < h.length; i++) { const end = i + 1 < h.length ? h[i + 1].t : now; if (end >= now - 16) s += h[i].d; }
+    if (/6[35]?2[1]?3$/.test(s)) return 1;
+    if (/2[35]?6$/.test(s) && s.length >= 2) return 0;
+    if (/2[15]?4$/.test(s)) return 2;
+    return -1;
+  }
+  motionBonus(g) { this.mh = []; this.st = Math.min(100, this.st + 8); this.stats.motions = (this.stats.motions || 0) + 1; g.say('ANIQ BUYRUQ', this.x, GROUND - 268, '#7fe3ff', 16); }
 
   spIdx(inp) { return inp.held.down ? 1 : inp.held[this.face > 0 ? 'left' : 'right'] ? 2 : 0; }
 
@@ -587,9 +623,21 @@ class Fighter {
       }
       case 'crouch': return POSES.crouch;
       case 'block': case 'blockstun': return f.crouching ? POSES.cblock : POSES.block;
-      case 'attack': case 'jatk': return f.af < f.atk.start + f.atk.act ? (f.af < f.atk.start * 0.5 && f.atk.heavy ? POSES.charge : POSES[f.atk.pose]) : (f.state === 'jatk' ? POSES.jump : POSES.idle);
+      case 'attack': case 'jatk': {
+        const A = f.atk, strike = POSES[A.pose] || POSES.punch;
+        if (f.state === 'jatk') return f.af < A.start + A.act ? strike : POSES.jump;
+        const kick = A.kind === 'kick' || /kick|round|sweep/.test(A.pose);
+        // 1) tayyorlanish: tizza yig'iladi / qo'l orqaga tortiladi
+        if (f.af < A.start * 0.6) return kick ? (A.pose === 'sweep' ? POSES.crouch : POSES.chamber) : A.heavy ? POSES.charge : POSES.windup;
+        // 2) zarba: biroz oshirib (overshoot)
+        if (f.af < A.start + A.act) return f.af < A.start ? strike : mixPose(strike, strike, 1, A.heavy ? 0.12 : 0.06);
+        // 3) qaytish: zarba holatidan sekin turishga
+        const r = Math.min(1, (f.af - A.start - A.act) / Math.max(1, A.rec)), e = r * r * (3 - 2 * r);
+        return mixPose(strike, POSES.idle, e, 0);
+      }
       case 'jump': return POSES.jump;
-      case 'hit': case 'superHit': return POSES.hit;
+      case 'hit': { const r = Math.min(1, f.t / Math.max(6, f.stun || 15)); return f.state === 'hit' && r > 0.45 ? mixPose(POSES.hit, POSES.idle, (r - 0.45) / 0.55, 0) : POSES.hit; }
+      case 'superHit': return POSES.hit;
       case 'air': return POSES.air;
       case 'down': case 'ko': case 'fin': case 'gone': return POSES.down;
       case 'getup': return POSES.getup;
@@ -631,7 +679,7 @@ class Fighter {
     if (f.state === 'gone' || f.hidden) return;
     const T = f.targetPose(g);
     const fast = f.state === 'attack' || f.state === 'special' || f.state === 'jatk' || f.state === 'finA' || f.state === 'super' || (g.superSeq && g.superSeq.a === f);
-    const k = fast ? 0.55 : 0.3;
+    const k = f.poseK(fast);
     for (const key of POSE_KEYS) {
       const tv = T[key] || 0;
       if (key === 'rot' && (f.state === 'thrown' || (f.curSp && f.curSp.kind === 'flip' && f.state === 'special'))) f.pose.rot = tv;
@@ -914,8 +962,11 @@ function applyHit(f, o, A, g) {
   g.sparks(hx, hy, A.heavy ? 18 : 9, '#ffd27a');
   g.ring(hx, hy, '#fff', A.heavy ? 80 : 45);
   f.gainMeter(dmg * 1.2); o.gainMeter(dmg * 0.9);
+  if (!o.airborne) o.jug = 0; else o.jug = (o.jug || 0) + 1;
+  if (o.jug >= 2) g.say('HAVODA ×' + o.jug, o.x, GROUND - 300, '#9cf', 18);
+  if (o.jug >= 6 && !A.kd) A = Object.assign({}, A, { kd: true, launch: false }); // cheksiz havo kombosi yo'q
   if (A.launch || (o.airborne && !A.kd)) {
-    o.set('air'); o.vy = A.launch ? -14 : -6; o.vx = f.face * (A.kb + 2); o.y = Math.min(o.y, GROUND - 1);
+    o.set('air'); o.vy = (A.launch ? -14 : -6) * Math.max(0.55, 1 - (o.jug || 0) * 0.1); o.vx = f.face * (A.kb + 2); o.y = Math.min(o.y, GROUND - 1);
   } else if (A.kd) {
     o.set('air'); o.vy = -7; o.vx = f.face * A.kb; o.y = GROUND - 1;
   } else {

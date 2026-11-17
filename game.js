@@ -1100,6 +1100,7 @@ function controlsMenu(back) {
         <h3>Maxsus usullar va Soya kuchi</h3>
         <p><b>Maxsus</b> — 1-usul, <b>Pastga + Maxsus</b> — 2-usul. Zarba tekkanda Maxsus bilan bekor qilish mumkin.</p>
         <p><b>Yakunlar:</b> "TUGAT UNI!" paytida Maxsus — qahramonning o'z yakuni, Pastga+Maxsus — "Uchinchi rels", Yuqoriga+Maxsus — "Do'stlik choyi".</p>
+        <p><b>Harakat buyruqlari:</b> ↓↘→ + zarba = 1-maxsus usul, →↓↘ + zarba = 2-usul, ↓↙← + zarba = 3-usul. Kamroq kuch sarflaydi va kombo ichida ham ishlaydi.</p>
         <p><b>Kuchaytirilgan maxsus usul:</b> Blok + Maxsus (Soya kuchining uchdan biri) — 1.5 barobar kuchli.</p>
         <p><b>Soya kuchi</b> (binafsha shkala) zarba berib/olib to'ladi. To'la bo'lsa: <b>Kuchli + Maxsus</b> — Soya zarbasi. Yarmi bilan: urilib turganda <b>Blok</b> — zanjirni uzish.</p>
         <p><b>Geympad:</b> X — yengil, Y — kuchli, A — tepish, B — ushlash, RB/RT — blok, LB/LT — maxsus, Start — pauza.</p>

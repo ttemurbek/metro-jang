@@ -347,7 +347,7 @@ const Arena3D = (() => {
   const _q = new T.Quaternion(), _q2 = new T.Quaternion(), _v = new T.Vector3(), _v2 = new T.Vector3();
   function retarget(model, f, g) {
     // 2D bilan bir xil silliq poza
-    const P = f.state === 'finA' && f.finPose ? f.finPose : f.targetPose(g), k0 = f.state === 'finA' ? 0.7 : 0.34;
+    const P = f.state === 'finA' && f.finPose ? f.finPose : f.targetPose(g), k0 = f.state === 'finA' ? 0.7 : f.poseK ? f.poseK() : 0.34;
     for (const k of ['lean', 'ua1', 'la1', 'ua2', 'la2', 'th1', 'sh1', 'th2', 'sh2', 'rot', 'lift']) {
       if (k === 'rot' && (f.state === 'thrown' || (f.curSp && f.curSp.kind === 'flip' && f.state === 'special'))) model.pose.rot = P.rot || 0;
       else model.pose[k] = (model.pose[k] || 0) + ((P[k] || 0) - (model.pose[k] || 0)) * k0;

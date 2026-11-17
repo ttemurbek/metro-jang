@@ -88,3 +88,21 @@ test("klinchdan tugmalarni bosib qutulish mumkin", () => {
 test('har bir jangchida kamida 2 ta maxsus usul va shaxsiy kombo bor', () => {
   for (const f of A.FIGHTERS) { assert.ok(f.specials.length >= 2, f.id); assert.ok(f.sig, f.id); }
 });
+
+test('↓↘→ + zarba maxsus usulni chiqaradi, oddiy zarba esa yo\'q', () => {
+  const g = game(), [a, b] = pair();
+  const seq = [{ down: true }, { down: true, right: true }, { right: true }];
+  for (const h of seq) for (let i = 0; i < 3; i++) a.step({ held: h, press: {} }, b, g);
+  a.step({ held: { right: true }, press: { punch: true } }, b, g);
+  assert.strictEqual(a.state, 'special');
+  const [c, d] = pair();
+  c.step({ held: {}, press: { punch: true } }, d, g);
+  assert.strictEqual(c.state, 'attack');
+});
+
+test('havodagi kombo cheksiz davom etmaydi', () => {
+  const g = game(), [a, b] = pair();
+  b.y = A.GROUND - 120; b.state = 'air';
+  for (let i = 0; i < 8; i++) { b.y = A.GROUND - 120; A.applyHit(a, b, A.ATK.jab, g); }
+  assert.ok(b.jug >= 6); assert.ok(b.vy > -14);
+});
